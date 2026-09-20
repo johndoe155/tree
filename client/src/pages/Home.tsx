@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
+import AtmosphericIslandLayer from "@/components/AtmosphericIslandLayer";
 import CloudscapeModel from "@/components/CloudscapeModel";
+import SharedSceneFinish from "@/components/SharedSceneFinish";
 
 const PHOTO_URL = "/cloudscape-source.webp";
 const DEPTH_URL = "/cloudscape-depth.webp";
@@ -167,6 +169,10 @@ function loadTexture(gl: WebGL2RenderingContext, url: string, unit: number) {
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fallbackRef = useRef<HTMLImageElement>(null);
+  // These retain the exact original CSS sizing and motion paths. The separate
+  // atmospheric pass reads their live bounds but never touches the GLB canvas.
+  const treeIslandRef = useRef<HTMLImageElement>(null);
+  const statueIslandRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -382,10 +388,12 @@ export default function Home() {
       <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
       <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
       <div className="cloudscape__islands" aria-hidden="true">
-        <img className="cloudscape__island cloudscape__island--tree" src="/tree-island.png" alt="" />
+        <img ref={treeIslandRef} className="cloudscape__island cloudscape__island--tree" src="/tree-island.png" alt="" />
         <CloudscapeModel />
-        <img className="cloudscape__island cloudscape__island--statue" src="/statue-island.png" alt="" />
+        <img ref={statueIslandRef} className="cloudscape__island cloudscape__island--statue" src="/statue-island.png" alt="" />
+        <AtmosphericIslandLayer treeRef={treeIslandRef} statueRef={statueIslandRef} />
       </div>
+      <SharedSceneFinish />
     </main>
   );
 }
