@@ -15,7 +15,13 @@ const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
 let tapsInstalled = false;
 let queue: string[] = [];
 let flushTimer = 0;
-const DEV = typeof import.meta !== "undefined" && Boolean(import.meta.env?.DEV);
+// Report wherever we are: this scene can only fail inside a browser, and the last three rounds were
+// spent guessing at what the page knew. In a build without the dev middleware the POST is dropped
+// after the first failure, and the same text is mirrored into the tab title for a human to read.
+const CAN_POST =
+  typeof fetch === "function" &&
+  (typeof import.meta === "undefined" || Boolean(import.meta.env?.DEV));
+let posting = CAN_POST;
 
 function notify() {
   listeners.forEach(listener => listener());
@@ -26,7 +32,7 @@ export function logDiag(message: string) {
   ring.push(entry);
   if (ring.length > 120) ring.splice(0, ring.length - 120);
   notify();
-  if (DEV) {
+  if (posting) {
     queue.push(`${entry.t}ms ${message}`);
     if (!flushTimer) flushTimer = window.setTimeout(flush, 800);
   }
@@ -42,13 +48,25 @@ function flush() {
     method: "POST",
     headers: { "content-type": "text/plain" },
     body: payload,
-  }).catch(() => {
-    /* the dev server may not have the plugin; the overlay still shows everything */
-  });
+  })
+    .then(response => {
+      // No sink (a production server, a proxy that does not forward it): stop trying, keep the
+      // on-screen channels.
+      if (response.status >= 400) posting = false;
+    })
+    .catch(() => {
+      posting = false;
+    });
 }
 
 export function readDiag(): DiagEntry[] {
   return ring.slice();
+}
+
+/** Mirrored to the tab title so the state is readable without devtools, and survives a screenshot. */
+function setTitle(text: string) {
+  if (typeof document === "undefined") return;
+  document.title = text.length > 120 ? `${text.slice(0, 117)}...` : text;
 }
 
 /** Per-layer progress, reported by whoever loads it, so the overlay needs no prop plumbing. */
@@ -70,6 +88,7 @@ let summary = "starting";
 export function setDiagSummary(value: string) {
   if (value === summary) return;
   summary = value;
+  setTitle(`cloudscape · ${value}`);
   notify();
 }
 export function readDiagSummary() {
@@ -113,6 +132,13 @@ export function installDiagTaps(
     };
   }
 
+  // The prime suspect for "geometry downloaded, never rendered" in a proxied dev server is the
+  // meshopt decoder's WASM being refused; a CSP says so out loud if it is.
+  document.addEventListener("securitypolicyviolation", event => {
+    logDiag(
+      `csp blocked ${event.blockedURI?.split("/").pop() ?? "?"} via ${event.violatedDirective}`
+    );
+  });
   window.addEventListener("error", event => {
     logDiag(
       `window.error: ${event.message} @${event.filename?.split("/").pop() ?? "?"}:${event.lineno}`
