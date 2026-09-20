@@ -91,6 +91,26 @@ export function diagLayersReady(names: string[]) {
   return names.every(name => layers.get(name) === "ready");
 }
 
+/**
+ * The last thing that went wrong, kept separately because the frame loop is the thing that dies when
+ * something throws: a summary assembled inside the canvas stops updating exactly when it would be most
+ * useful, so the error has to be picked up by a loop that lives in the DOM instead.
+ */
+let lastError = "";
+export function readDiagLastError() {
+  return lastError;
+}
+
+/** What the render loop itself reports: frame count, who owns rendering, buffer size. */
+let loopInfo = "loop starting";
+export function setDiagLoopInfo(value: string) {
+  if (value === loopInfo) return;
+  loopInfo = value;
+}
+export function readDiagLoopInfo() {
+  return loopInfo;
+}
+
 /** The live one-line summary of the scene, kept by the render loop for the overlay. */
 let summary = "starting";
 export function setDiagSummary(value: string) {
@@ -112,6 +132,14 @@ export function subscribeDiag(listener: () => void) {
  * Captures the things that otherwise only appear in a console nobody has open: three's shader and
  * program warnings, uncaught errors, rejected loader promises, and WebGL context loss.
  */
+let titleTimer = 0;
+
+function noteError(text: string) {
+  if (text === lastError) return;
+  lastError = text.slice(0, 220);
+  setDiagSummary(`${readDiagLayers()} | ${loopInfo} | error: ${lastError}`);
+}
+
 export function installDiagTaps(
   canvasGetter?: () => HTMLCanvasElement | null | undefined
 ) {
@@ -133,7 +161,9 @@ export function installDiagTaps(
         .join(" ")
         .replace(/\s+/g, " ")
         .slice(0, 400);
-      if (/three|webgl|shader|program|gltf|texture|meshopt/i.test(text)) {
+      if (level === "error" && text)
+        noteError(`console.error: ${text.slice(0, 180)}`);
+      if (/three|webgl|shader|program|gltf|texture|meshopt|error/i.test(text)) {
         logDiag(`console.${level}: ${text}`);
       }
       original(...args);
@@ -143,21 +173,32 @@ export function installDiagTaps(
   // The prime suspect for "geometry downloaded, never rendered" in a proxied dev server is the
   // meshopt decoder's WASM being refused; a CSP says so out loud if it is.
   document.addEventListener("securitypolicyviolation", event => {
-    logDiag(
+    noteError(
       `csp blocked ${event.blockedURI?.split("/").pop() ?? "?"} via ${event.violatedDirective}`
     );
   });
   window.addEventListener("error", event => {
-    logDiag(
-      `window.error: ${event.message} @${event.filename?.split("/").pop() ?? "?"}:${event.lineno}`
-    );
+    const where = `${event.filename?.split("/").pop() ?? "?"}:${event.lineno}`;
+    noteError(`window.error: ${event.message} @${where}`);
+    logDiag(`window.error: ${event.message} @${where}`);
   });
   window.addEventListener("unhandledrejection", event => {
     const reason = event.reason;
-    logDiag(
-      `unhandledrejection: ${reason instanceof Error ? reason.message : String(reason)}`
-    );
+    const text = reason instanceof Error ? reason.message : String(reason);
+    noteError(`rejected promise: ${text}`);
+    logDiag(`unhandledrejection: ${text}`);
   });
+
+  // The canvas can be taken down from under the loop that reports on it - an error inside a
+  // post-processing pass will do exactly that - so the readable state is kept by a DOM-side timer
+  // rather than by anything that lives inside the scene.
+  if (titleTimer === 0) {
+    titleTimer = window.setInterval(() => {
+      setDiagSummary(
+        `${readDiagLayers()} | ${readDiagLoopInfo()}${lastError ? ` | error: ${lastError}` : ""}`
+      );
+    }, 1000);
+  }
 
   const attach = () => {
     const canvas = canvasGetter?.();

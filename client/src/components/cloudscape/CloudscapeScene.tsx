@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, N8AO } from "@react-three/postprocessing";
-import { useEffect, useMemo, useRef } from "react";
+import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import {
   BASE_FOV,
@@ -41,7 +41,7 @@ import {
   logDiag,
   readDiagLayers,
   setDiagLayer,
-  setDiagSummary,
+  setDiagLoopInfo,
 } from "./diagnostics";
 
 const IS_MOBILE =
@@ -247,6 +247,10 @@ function PaintWatcher({ onPainted }: { onPainted: () => void }) {
   const probe = useRef(new Uint8Array(4));
   const last = useRef("not sampled yet");
   const startedAt = useRef(0);
+  const lastFrame = useRef(0);
+  const starved = useRef(0);
+  const takeOver = useRef(false);
+  const renderedDirectly = useRef(false);
 
   /*
    * The reveal waits for a frame that was really rendered. Reading it that way matters because
@@ -266,8 +270,40 @@ function PaintWatcher({ onPainted }: { onPainted: () => void }) {
    * meshes still renders frames. Pixels are read for the report only: at this point in the frame the
    * drawing buffer has been presented, and reading it then is not guaranteed to return the image.
    */
-  useFrame(() => {
+  useFrame(state => {
     const info = gl.info.render;
+
+    // Starvation guard. The composer subscribes at priority 1, which tells R3F to stand down, and
+    // then returns early every frame until its own mount effect has produced a composer instance. If
+    // that effect never completes - a pass that fails to construct, an option combination the
+    // renderer refuses - R3F stays stood down and nothing renders at all: loop alive, buffer empty,
+    // no error anywhere, which is how this scene presented for three rounds. So when nobody else is
+    // producing frames, the scene is rendered directly instead. Post-processing is lost and says so
+    // loudly; a blank page is not an acceptable substitute.
+    //
+    // Frames drawn here are subtracted before deciding, otherwise the fallback would run every other
+    // frame and each of its own frames would read as a recovery.
+    const advance = info.frame - lastFrame.current;
+    lastFrame.current = info.frame;
+    const fromOthers = advance - (renderedDirectly.current ? 1 : 0);
+    if (fromOthers > 0) {
+      if (takeOver.current)
+        logDiag("composer resumed; direct rendering stopped");
+      starved.current = 0;
+      takeOver.current = false;
+      renderedDirectly.current = false;
+    } else {
+      starved.current += 1;
+      if (starved.current === 3) {
+        takeOver.current = true;
+        logDiag(
+          `no frames from r3f or the composer; rendering directly without post-processing (${readDiagLayers()})`
+        );
+      }
+      renderedDirectly.current = takeOver.current;
+      if (takeOver.current) state.gl.render(state.scene, state.camera);
+    }
+
     if (done.current) return;
 
     if (info.frame > 0 && diagLayersReady(["plate", "islands"])) {
@@ -333,13 +369,17 @@ function PaintWatcher({ onPainted }: { onPainted: () => void }) {
       // Keep reporting until the heavy layers settle too: after the reveal the title is the only
       // place left that says whether the model arrived, and that is the question being asked.
       const layers = readDiagLayers();
-      if (done.current && /model:(ready|failed)/.test(layers)) {
+      if (
+        done.current &&
+        /model:(ready|failed)/.test(layers) &&
+        !takeOver.current
+      ) {
         window.clearInterval(id);
         return;
       }
       const info = gl.info.render;
-      setDiagSummary(
-        `${readDiagLayers()} | loop frames=${info.frame} calls=${info.calls} r3fPriority=${priority} subs=${subscribers} loop=${frameloop} buffer=${gl.domElement.width}x${gl.domElement.height} css=${Math.round(size.width)}x${Math.round(size.height)} dpr=${gl.getPixelRatio().toFixed(2)} samples=${last.current} depth=${viewDepthAtOrigin(camera).toFixed(2)} lost=${gl.getContext().isContextLost()}`
+      setDiagLoopInfo(
+        `loop frames=${info.frame} calls=${info.calls} r3fPriority=${priority} subs=${subscribers} loop=${frameloop} buffer=${gl.domElement.width}x${gl.domElement.height} css=${Math.round(size.width)}x${Math.round(size.height)} dpr=${gl.getPixelRatio().toFixed(2)} direct=${takeOver.current ? "yes" : "no"} samples=${last.current} depth=${viewDepthAtOrigin(camera).toFixed(2)} lost=${gl.getContext().isContextLost()}`
       );
     };
     report();
@@ -348,6 +388,42 @@ function PaintWatcher({ onPainted }: { onPainted: () => void }) {
   }, [gl, camera, size, priority, subscribers, frameloop]);
 
   return null;
+}
+
+/**
+ * Mount witness. `@react-three/postprocessing` renders `null` until its own mount effect has built a
+ * composer, so the children below it exist only in that case: a line here means "the composer is
+ * initialised and its passes exist", and its absence with a starved frame loop means the composer
+ * never got that far. Those two states look identical from the outside and need different fixes.
+ */
+function FinishWitness({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    logDiag("composer children mounted (composer initialised)");
+  }, []);
+  return <>{children}</>;
+}
+
+/**
+ * A post-processing pass that cannot construct itself should not be able to unmount the scene. The
+ * error is reported through the same channels as everything else, so the readable state says the
+ * finish pass is off and why instead of leaving a silent empty canvas.
+ */
+class PassHost extends Component<{ children: ReactNode; label: string }> {
+  state = { failed: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { failed: error instanceof Error ? error.message : String(error) };
+  }
+
+  componentDidCatch(error: unknown) {
+    logDiag(
+      `${this.props.label} disabled: ${this.state.failed || (error instanceof Error ? error.message : "unknown error")}`
+    );
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 function HeavyLayers({ director }: { director: Director }) {
@@ -409,17 +485,21 @@ function Scene({
       <SkyPlate director={director} />
       <CloudscapeIslands director={director} />
       <PaintWatcher onPainted={onPainted} />
-      <EffectComposer multisampling={IS_MOBILE ? 0 : 4}>
-        <N8AO aoRadius={0.35} intensity={1.35} distanceFalloff={1.2} />
-        <Bloom
-          mipmapBlur
-          intensity={BLOOM_INTENSITY}
-          luminanceThreshold={BLOOM_LUMINANCE_THRESHOLD}
-          luminanceSmoothing={BLOOM_LUMINANCE_SMOOTHING}
-          radius={BLOOM_RADIUS}
-        />
-        <CloudscapeFinish ref={finishRef} />
-      </EffectComposer>
+      <PassHost label="post-processing">
+        <EffectComposer multisampling={IS_MOBILE ? 0 : 4}>
+          <N8AO aoRadius={0.35} intensity={1.35} distanceFalloff={1.2} />
+          <Bloom
+            mipmapBlur
+            intensity={BLOOM_INTENSITY}
+            luminanceThreshold={BLOOM_LUMINANCE_THRESHOLD}
+            luminanceSmoothing={BLOOM_LUMINANCE_SMOOTHING}
+            radius={BLOOM_RADIUS}
+          />
+          <FinishWitness>
+            <CloudscapeFinish ref={finishRef} />
+          </FinishWitness>
+        </EffectComposer>
+      </PassHost>
     </>
   );
 }
