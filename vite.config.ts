@@ -203,7 +203,52 @@ function vitePluginStorageProxy(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
+/**
+ * Dev-only sink for the WebGL scene's self-reporting (`client/src/components/cloudscape/diagnostics.ts`).
+ * The scene can only fail in a browser, so it posts what it knows and this appends it to a log file
+ * that can be read back from the workspace - no devtools required.
+ */
+function vitePluginCloudscapeDiagnostics(): Plugin {
+  return {
+    name: "vite-plugin-cloudscape-diagnostics",
+    apply: "serve",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/__cloudscape-diag", (req, res) => {
+        let body = "";
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          res.statusCode = 204;
+          res.end();
+          try {
+            ensureLogDir();
+            fs.appendFileSync(
+              path.join(LOG_DIR, "cloudscape-diag.log"),
+              `${body}\n`
+            );
+            trimLogFile(
+              path.join(LOG_DIR, "cloudscape-diag.log"),
+              MAX_LOG_SIZE_BYTES
+            );
+          } catch {
+            /* diagnostics must never break the dev server */
+          }
+        });
+      });
+    },
+  };
+}
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+  vitePluginStorageProxy(),
+  vitePluginCloudscapeDiagnostics(),
+];
 
 export default defineConfig({
   plugins,
@@ -230,6 +275,7 @@ export default defineConfig({
       ".manus-asia.computer",
       ".manuscomputer.ai",
       ".manusvm.computer",
+      ".e2b.app", // Arena sandbox preview
       "localhost",
       "127.0.0.1",
     ],
