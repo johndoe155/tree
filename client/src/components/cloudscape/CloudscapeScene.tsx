@@ -1,7 +1,6 @@
-import { Environment } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, N8AO } from "@react-three/postprocessing";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import {
   BASE_FOV,
@@ -27,7 +26,7 @@ import {
 } from "./constants";
 import { createDirector } from "./director";
 import { CloudscapeFinish, type CloudscapeFinishEffect } from "./finish";
-import CloudscapeIslands, { useSceneTexture } from "./CloudscapeIslands";
+import CloudscapeIslands from "./CloudscapeIslands";
 import CloudscapeModel from "./CloudscapeModel";
 import {
   fitWorldSize,
@@ -36,6 +35,13 @@ import {
   viewDepthAtOrigin,
 } from "./layout";
 import { PLANE_VERTEX, SKY_FRAGMENT } from "./shaders";
+import { useStudioEnvironment, useTexture } from "./assets";
+import {
+  logDiag,
+  readDiagLayers,
+  setDiagLayer,
+  setDiagSummary,
+} from "./diagnostics";
 
 const IS_MOBILE =
   typeof window !== "undefined" &&
@@ -46,19 +52,21 @@ const REDUCED_MOTION =
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+export type Director = ReturnType<typeof createDirector>;
+
 /**
  * One clock, one pointer and one atmosphere for the whole scene.
  *
- * The fog range is derived from the *fitted* size of the centre island instead of fixed world
- * units, because the scene is rescaled to the viewport: the same numbers have to mean the same
- * amount of atmosphere on a phone and on a 5K display.
+ * The fog range is derived from the *fitted* size of the centre island instead of fixed world units,
+ * because the scene is rescaled to the viewport: the same numbers have to mean the same amount of
+ * atmosphere on a phone and on a 5K display.
  */
 function SceneDirector({
   director,
   fogRef,
   finishRef,
 }: {
-  director: ReturnType<typeof createDirector>;
+  director: Director;
   fogRef: React.RefObject<THREE.Fog | null>;
   finishRef: React.RefObject<CloudscapeFinishEffect | null>;
 }) {
@@ -72,12 +80,11 @@ function SceneDirector({
         camera.fov = aspect < 0.72 ? MOBILE_FOV : BASE_FOV;
         camera.updateProjectionMatrix();
       }
-      gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     };
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [camera, gl]);
+  }, [camera]);
 
   const pointerGoal = useRef(new THREE.Vector2());
   useEffect(() => {
@@ -91,7 +98,10 @@ function SceneDirector({
     return () => window.removeEventListener("pointermove", handlePointer);
   }, []);
 
-  useFrame((_state, delta) => {
+  // A negative priority only orders this subscriber first: R3F hands rendering to whoever subscribes
+  // with a *positive* priority, which is the composer. `gl` stays untouched, so R3F keeps owning the
+  // drawing-buffer size (setting the pixel ratio here would resize it behind R3F's back).
+  useFrame((state, delta) => {
     director.time += delta;
     director.motion = REDUCED_MOTION ? 0 : 1;
     director.reducedMotion = REDUCED_MOTION ? 1 : 0;
@@ -99,9 +109,9 @@ function SceneDirector({
 
     if (camera instanceof THREE.PerspectiveCamera && fogRef.current) {
       const fit = fitWorldSize(
-        _state.viewport.width,
-        _state.viewport.height,
-        _state.size.width
+        state.viewport.width,
+        state.viewport.height,
+        state.size.width
       );
       const { near, far } = fogRangeFor(viewDepthAtOrigin(camera), fit);
       fogRef.current.near = near;
@@ -114,18 +124,14 @@ function SceneDirector({
 }
 
 /** The cloudscape plate, driven by its own depth map. Fog is off: this *is* the sky. */
-function SkyPlate({
-  director,
-}: {
-  director: ReturnType<typeof createDirector>;
-}) {
-  const photo = useSceneTexture(PHOTO_URL);
-  const depth = useSceneTexture(DEPTH_URL, { linearData: true });
+function SkyPlate({ director }: { director: Director }) {
+  const photo = useTexture(PHOTO_URL);
+  const depth = useTexture(DEPTH_URL, { linearData: true });
   const meshRef = useRef<THREE.Mesh>(null);
   const uniforms = useMemo(
     () => ({
-      uPhoto: { value: photo },
-      uDepth: { value: depth },
+      uPhoto: { value: null as THREE.Texture | null },
+      uDepth: { value: null as THREE.Texture | null },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uImageAspect: { value: 1 },
       uTime: { value: 0 },
@@ -133,16 +139,33 @@ function SkyPlate({
       uReducedMotion: { value: 0 },
       uCover: { value: SKY_COVER },
     }),
-    [photo, depth]
+    []
   );
 
+  const ready = Boolean(photo.data && depth.data);
+
   useEffect(() => {
-    const image = photo.image as { width?: number; height?: number } | null;
+    setDiagLayer(
+      "plate",
+      photo.stage === "ready" && depth.stage === "ready"
+        ? "ready"
+        : photo.stage === "failed" || depth.stage === "failed"
+          ? "failed"
+          : "loading"
+    );
+  }, [photo.stage, depth.stage]);
+
+  useEffect(() => {
+    if (!photo.data || !depth.data) return;
+    uniforms.uPhoto.value = photo.data;
+    uniforms.uDepth.value = depth.data;
+    const image = photo.data.image as { width?: number; height?: number };
     if (image?.width && image.height)
       uniforms.uImageAspect.value = image.width / image.height;
-  }, [photo, uniforms]);
+  }, [photo.data, depth.data, uniforms]);
 
   useFrame(state => {
+    if (!ready) return;
     const camera = state.camera as THREE.PerspectiveCamera;
     const size = state.size;
     uniforms.uResolution.value.set(size.width, size.height);
@@ -166,6 +189,8 @@ function SkyPlate({
     }
   });
 
+  if (!ready) return null;
+
   return (
     <mesh ref={meshRef} renderOrder={-10} frustumCulled={false}>
       <planeGeometry args={[1, 1]} />
@@ -181,21 +206,131 @@ function SkyPlate({
   );
 }
 
-/** Lets the page keep the still photo up until the first real frame is on screen. */
-function FirstFrame({ onReady }: { onReady: () => void }) {
-  useEffect(() => {
-    const raf = requestAnimationFrame(onReady);
-    return () => cancelAnimationFrame(raf);
-  }, [onReady]);
+/**
+ * The studio HDRI, prefiltered by hand instead of through a suspending component: reflections are the
+ * most expensive thing on the page after the model and they must never be able to hold the frame up.
+ */
+function StudioEnvironment() {
+  const url = IS_MOBILE ? HDRI_URL_MOBILE : HDRI_URL_DESKTOP;
+  const stage = useStudioEnvironment(url, STUDIO_ENV_INTENSITY);
+  useEffect(() => setDiagLayer("hdri", stage), [stage]);
   return null;
+}
+
+/**
+ * Tells the page when the canvas is genuinely showing something, and keeps a live summary of the
+ * render loop for the dev overlay.
+ *
+ * Readiness used to be a bare `requestAnimationFrame`, which can fire on a canvas that has never been
+ * drawn to: the photograph faded out, a blank clear colour took its place, and the difference between
+ * "still loading" and "broken" disappeared with it. So the gate is a real read of the framebuffer -
+ * a few sampled pixels that must differ from the clear colour - which makes a blank reveal
+ * unreachable and doubles as the diagnostic: the colours it saw are reported every second until then.
+ */
+const PROBE_POINTS: Array<[number, number]> = [
+  [0.5, 0.5],
+  [0.26, 0.28],
+  [0.74, 0.62],
+  [0.5, 0.86],
+];
+
+function PaintWatcher({ onPainted }: { onPainted: () => void }) {
+  const gl = useThree(state => state.gl);
+  const camera = useThree(state => state.camera);
+  const size = useThree(state => state.size);
+  const done = useRef(false);
+  const probe = useRef(new Uint8Array(4));
+  const last = useRef("no sample yet");
+
+  // Above the composer's priority, so this runs after the frame has been drawn to the canvas.
+  useFrame(() => {
+    // readPixels synchronises the GPU, so probing stops the moment the reveal has been granted.
+    if (done.current) return;
+    const info = gl.info.render;
+    const context = gl.getContext();
+    const width = gl.domElement.width;
+    const height = gl.domElement.height;
+    let painted = false;
+    if (width > 1 && height > 1) {
+      let difference = 0;
+      const seen: string[] = [];
+      for (const [fx, fy] of PROBE_POINTS) {
+        // WebGL reads bottom-up, hence the flipped y.
+        const x = Math.min(width - 1, Math.floor(fx * width));
+        const y = Math.min(height - 1, Math.floor((1 - fy) * height));
+        try {
+          context.readPixels(
+            x,
+            y,
+            1,
+            1,
+            context.RGBA,
+            context.UNSIGNED_BYTE,
+            probe.current
+          );
+        } catch {
+          break;
+        }
+        const r = probe.current[0];
+        const g = probe.current[1];
+        const b = probe.current[2];
+        seen.push(
+          `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`
+        );
+        // The plate is never uniform, so anything that leaves the clear colour means pixels arrived.
+        difference += Math.abs(r - 23) + Math.abs(g - 19) + Math.abs(b - 49);
+      }
+      last.current = seen.length ? seen.join(" ") : "readPixels unavailable";
+      painted = difference > 40;
+    }
+
+    if (!done.current && info.frame > 0 && painted) {
+      done.current = true;
+      logDiag(
+        `painted: frames=${info.frame} buffer=${width}x${height} samples=${last.current} programs=${gl.info.programs?.length ?? 0}`
+      );
+      onPainted();
+    }
+  }, 20);
+
+  useEffect(() => {
+    let id = 0;
+    const report = () => {
+      if (done.current) {
+        window.clearInterval(id);
+        return;
+      }
+      const info = gl.info.render;
+      setDiagSummary(
+        `${readDiagLayers()} | loop frames=${info.frame} buffer=${gl.domElement.width}x${gl.domElement.height} css=${Math.round(size.width)}x${Math.round(size.height)} dpr=${gl.getPixelRatio().toFixed(2)} samples=${last.current} programs=${gl.info.programs?.length ?? 0} geometries=${gl.info.memory.geometries} textures=${gl.info.memory.textures} depth=${viewDepthAtOrigin(camera).toFixed(2)} contextLost=${gl.getContext().isContextLost()}`
+      );
+    };
+    report();
+    id = window.setInterval(report, 1500);
+    return () => window.clearInterval(id);
+  }, [gl, camera, size]);
+
+  return null;
+}
+
+function HeavyLayers({ director }: { director: Director }) {
+  useEffect(() => {
+    logDiag("heavy layers requested (model + hdri)");
+  }, []);
+  return (
+    <>
+      <CloudscapeModel director={director} />
+      <StudioEnvironment />
+    </>
+  );
 }
 
 function Scene({
   director,
-  onReady,
+  onPainted,
 }: {
-  director: ReturnType<typeof createDirector>;
-  onReady: () => void;
+  director: Director;
+  onPainted: () => void;
 }) {
   const fogRef = useRef<THREE.Fog>(null);
   const finishRef = useRef<CloudscapeFinishEffect>(null);
@@ -234,16 +369,9 @@ function Scene({
         color="#c7cbe0"
       />
       <hemisphereLight args={["#9da8bb", "#090a0d", 0.14]} />
-      <Suspense fallback={null}>
-        <Environment
-          files={IS_MOBILE ? HDRI_URL_MOBILE : HDRI_URL_DESKTOP}
-          environmentIntensity={STUDIO_ENV_INTENSITY}
-        />
-        <SkyPlate director={director} />
-        <CloudscapeIslands director={director} />
-        <CloudscapeModel director={director} />
-        <FirstFrame onReady={onReady} />
-      </Suspense>
+      <SkyPlate director={director} />
+      <CloudscapeIslands director={director} />
+      <PaintWatcher onPainted={onPainted} />
       <EffectComposer multisampling={IS_MOBILE ? 0 : 4}>
         <N8AO aoRadius={0.35} intensity={1.35} distanceFalloff={1.2} />
         <Bloom
@@ -267,6 +395,16 @@ export default function CloudscapeScene({
   onReady: () => void;
 }) {
   const director = useMemo(() => createDirector(), []);
+  // Nothing inside the canvas suspends any more, so the scene tree can be built once: the reveal
+  // class below is a CSS-only change and must not rebuild every material and texture.
+  const scene = useMemo(
+    () => <Scene director={director} onPainted={onReady} />,
+    [director, onReady]
+  );
+  const heavy = useMemo(
+    () => (ready ? <HeavyLayers director={director} /> : null),
+    [ready, director]
+  );
 
   return (
     <Canvas
@@ -289,9 +427,13 @@ export default function CloudscapeScene({
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = STUDIO_EXPOSURE;
+        logDiag(
+          `canvas created ${gl.domElement.width}x${gl.domElement.height} dpr=${gl.getPixelRatio()} webgl2=${gl.capabilities.isWebGL2}`
+        );
       }}
     >
-      <Scene director={director} onReady={onReady} />
+      {scene}
+      {heavy}
     </Canvas>
   );
 }

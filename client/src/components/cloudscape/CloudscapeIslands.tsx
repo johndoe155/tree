@@ -1,5 +1,5 @@
-import { useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import {
   CENTRE_MIST,
@@ -18,6 +18,8 @@ import {
   sideIslandWidthPx,
   upperAxis,
 } from "./constants";
+import { useTexture } from "./assets";
+import { setDiagLayer } from "./diagnostics";
 import {
   fitWorldSize,
   islandViewDepth,
@@ -28,25 +30,6 @@ import {
 } from "./layout";
 import { createIslandMaterial, createMistMaterial } from "./shaders";
 import type { Director } from "./director";
-
-/** Loads a texture and puts it in the colour space the scene renders in. */
-export function useSceneTexture(
-  url: string,
-  options?: { linearData?: boolean }
-) {
-  const texture = useLoader(THREE.TextureLoader, url);
-  const gl = useThree(state => state.gl);
-  return useMemo(() => {
-    // sRGB sources are decoded on sample and re-encoded on output, so a plate round-trips to the
-    // exact pixels the DOM layer used to show. Data maps (the depth plate) must stay raw.
-    texture.colorSpace = options?.linearData
-      ? THREE.NoColorSpace
-      : THREE.SRGBColorSpace;
-    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
-    texture.needsUpdate = true;
-    return texture;
-  }, [texture, gl, options?.linearData]);
-}
 
 type Placement = {
   object: THREE.Object3D;
@@ -71,8 +54,22 @@ export default function CloudscapeIslands({
 }: {
   director: Director;
 }) {
-  const treeTexture = useSceneTexture(TREE_ISLAND.url);
-  const statueTexture = useSceneTexture(STATUE_ISLAND.url);
+  const tree = useTexture(TREE_ISLAND.url);
+  const statue = useTexture(STATUE_ISLAND.url);
+  const treeTexture = tree.data;
+  const statueTexture = statue.data;
+
+  useEffect(() => {
+    const stages = [tree.stage, statue.stage];
+    setDiagLayer(
+      "islands",
+      stages.every(stage => stage === "ready")
+        ? "ready"
+        : stages.some(stage => stage === "failed")
+          ? "failed"
+          : "loading"
+    );
+  }, [tree.stage, statue.stage]);
 
   const treeRef = useRef<THREE.Group>(null);
   const statueRef = useRef<THREE.Group>(null);
@@ -81,11 +78,11 @@ export default function CloudscapeIslands({
   const centreMistRefs = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
 
   const treeMaterial = useMemo(
-    () => createIslandMaterial(treeTexture),
+    () => (treeTexture ? createIslandMaterial(treeTexture) : null),
     [treeTexture]
   );
   const statueMaterial = useMemo(
-    () => createIslandMaterial(statueTexture),
+    () => (statueTexture ? createIslandMaterial(statueTexture) : null),
     [statueTexture]
   );
 
@@ -180,7 +177,7 @@ export default function CloudscapeIslands({
 
       // The defocus is authored in screen pixels and converted into the plate's uv space, so the
       // islands stay this soft whether they render 180px or 340px wide.
-      material.userData.blur.value.set(
+      material?.userData.blur.value.set(
         ISLAND_FOCUS_BLUR_PX / widthPx,
         ISLAND_FOCUS_BLUR_PX / heightPx
       );
@@ -237,9 +234,11 @@ export default function CloudscapeIslands({
     <>
       {islands.map((island, index) => (
         <group key={`island-${index}`} ref={island.group} renderOrder={2}>
-          <mesh material={island.material} frustumCulled={false}>
-            <planeGeometry args={[1, 1]} />
-          </mesh>
+          {island.material ? (
+            <mesh material={island.material} frustumCulled={false}>
+              <planeGeometry args={[1, 1]} />
+            </mesh>
+          ) : null}
         </group>
       ))}
       {bands.map((band, index) => (

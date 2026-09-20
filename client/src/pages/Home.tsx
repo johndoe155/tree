@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import CloudscapeScene from "@/components/cloudscape/CloudscapeScene";
+import DiagnosticsOverlay from "@/components/cloudscape/DiagnosticsOverlay";
+import { installDiagTaps, logDiag } from "@/components/cloudscape/diagnostics";
 
 const PHOTO_URL = "/cloudscape-source.webp";
 const ISLAND_SOURCES = [
@@ -27,19 +29,25 @@ function hasWebGL2() {
 }
 
 /**
- * The whole view is one canvas: the cloudscape plate, the two PNG islands, the centre island and
- * the post-process that finishes them all together. This page only owns the still-image fallback
- * around it, and keeps it up until the first real frame is on screen so nothing ever pops in.
+ * The whole view is one canvas: the cloudscape plate, the two PNG islands, the centre island and the
+ * post-process that finishes them all together. This page owns the still photograph underneath it and
+ * keeps it up until the canvas has actually painted a frame - never a rAF, never a Suspense boundary,
+ * so a slow or stalled asset can only ever delay the reveal, never replace the picture with a blank.
  */
 export default function Home() {
   const [supported] = useState(hasWebGL2);
-  const [ready, setReady] = useState(false);
+  const [painted, setPainted] = useState(false);
   const [lost, setLost] = useState(false);
   const sceneRef = useRef<HTMLDivElement>(null);
-  const handleReady = useCallback(() => setReady(true), []);
+  const handlePainted = useCallback(() => setPainted(true), []);
 
-  // A lost context used to blank the background plate and leave a stale framebuffer behind. Here
-  // the fallback simply takes over again, and three re-uploads its own textures on restore.
+  useEffect(
+    () => installDiagTaps(() => sceneRef.current?.querySelector("canvas")),
+    []
+  );
+
+  // A lost context hands the picture back to the photograph; three re-uploads its own textures on
+  // restore, and the reveal gate above does the rest.
   useEffect(() => {
     if (!supported) return;
     const canvas = sceneRef.current?.querySelector("canvas");
@@ -55,15 +63,19 @@ export default function Home() {
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
     };
-  }, [supported, ready]);
+  }, [supported, painted]);
 
-  const showFallback = !supported || !ready || lost;
+  const showFallback = !supported || !painted || lost;
+
+  useEffect(() => {
+    logDiag(showFallback ? "showing photograph" : "showing canvas");
+  }, [showFallback]);
 
   return (
     <main className="cloudscape" aria-label="Animated cloudscape">
       {supported ? (
         <div ref={sceneRef} className="cloudscape__scene">
-          <CloudscapeScene ready={!showFallback} onReady={handleReady} />
+          <CloudscapeScene ready={!showFallback} onReady={handlePainted} />
         </div>
       ) : null}
       <div
@@ -80,6 +92,7 @@ export default function Home() {
           />
         ))}
       </div>
+      <DiagnosticsOverlay />
     </main>
   );
 }

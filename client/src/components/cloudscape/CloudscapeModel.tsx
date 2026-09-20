@@ -1,9 +1,7 @@
 /// <reference types="@react-three/fiber" />
-import { useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import {
   FLOAT_AMPLITUDE_BASE,
   FLOAT_SPEED,
@@ -12,12 +10,16 @@ import {
   VIEWPORT_FIT_FACTOR,
   centerScale,
 } from "./constants";
+import { useGltf } from "./assets";
+import { setDiagLayer } from "./diagnostics";
 import type { Director } from "./director";
 
 const REDUCED_MOTION =
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const FLOAT_AMPLITUDE = REDUCED_MOTION ? 0 : FLOAT_AMPLITUDE_BASE;
+/** Seconds the centre island takes to grow to full size once its bytes are decoded. */
+const SETTLE_SECONDS = 0.5;
 
 const FLOAT_PATH = [
   { phase: 0, value: 0 },
@@ -238,17 +240,21 @@ function installHoldShader(
 }
 
 export default function CloudscapeModel({ director }: { director: Director }) {
-  const gltf = useLoader(GLTFLoader, MODEL_URL, loader =>
-    loader.setMeshoptDecoder(MeshoptDecoder)
-  );
+  const gltf = useGltf(MODEL_URL);
   const gl = useThree(state => state.gl);
+  const settleRef = useRef(REDUCED_MOTION ? 1 : 0);
+
+  useEffect(() => {
+    setDiagLayer("model", gltf.data ? "ready" : gltf.stage);
+  }, [gltf.data, gltf.stage]);
   const fitRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
   const normalizedScaleRef = useRef(1);
   const holdUniforms = useRef(createHoldUniforms());
 
   const { scene } = useMemo(() => {
-    const cloned = gltf.scene.clone(true);
+    if (!gltf.data) return { scene: null as THREE.Group | null };
+    const cloned = gltf.data.clone(true);
     const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
     const patchedMaterials = new Set<THREE.Material>();
     let geomMin = new THREE.Vector3(Infinity, Infinity, Infinity);
@@ -312,22 +318,35 @@ export default function CloudscapeModel({ director }: { director: Director }) {
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     normalizedScaleRef.current = 1 / maxDim;
     return { scene: cloned };
-  }, [gltf, gl]);
+  }, [gltf.data, gl]);
 
-  useFrame(state => {
+  useFrame((state, delta) => {
     const viewport = state.viewport;
+    // The model is the last thing to arrive, so it grows the last 3% instead of appearing as a pop
+    // in the middle of an already-moving frame.
+    if (settleRef.current < 1) {
+      settleRef.current = Math.min(
+        1,
+        settleRef.current + delta / SETTLE_SECONDS
+      );
+    }
+    const settle = 0.97 + 0.03 * (1 - Math.pow(1 - settleRef.current, 3));
     // `centerScale` used to shrink the whole canvas from CSS; now that the canvas also carries the
     // sky, only the centre island scales down on small screens.
     const responsive =
       Math.min(viewport.width, viewport.height) *
       VIEWPORT_FIT_FACTOR *
       centerScale(state.size.width);
-    fitRef.current?.scale.setScalar(normalizedScaleRef.current * responsive);
+    fitRef.current?.scale.setScalar(
+      normalizedScaleRef.current * responsive * settle
+    );
     if (floatRef.current) {
       floatRef.current.position.y =
         sampleFloatPath(director.time) * FLOAT_AMPLITUDE;
     }
   });
+
+  if (!scene) return null;
 
   return (
     <group ref={fitRef}>

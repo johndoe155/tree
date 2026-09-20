@@ -56,7 +56,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -132,7 +132,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", (chunk) => {
+        req.on("data", chunk => {
           body += chunk.toString();
         });
 
@@ -162,7 +162,10 @@ function vitePluginStorageProxy(): Plugin {
           return;
         }
 
-        const forgeBaseUrl = (process.env.BUILT_IN_FORGE_API_URL || "").replace(/\/+$/, "");
+        const forgeBaseUrl = (process.env.BUILT_IN_FORGE_API_URL || "").replace(
+          /\/+$/,
+          ""
+        );
         const forgeKey = process.env.BUILT_IN_FORGE_API_KEY;
 
         if (!forgeBaseUrl || !forgeKey) {
@@ -172,7 +175,10 @@ function vitePluginStorageProxy(): Plugin {
         }
 
         try {
-          const forgeUrl = new URL("v1/storage/presign/get", forgeBaseUrl + "/");
+          const forgeUrl = new URL(
+            "v1/storage/presign/get",
+            forgeBaseUrl + "/"
+          );
           forgeUrl.searchParams.set("path", key);
 
           const forgeResp = await fetch(forgeUrl, {
@@ -203,7 +209,52 @@ function vitePluginStorageProxy(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
+/**
+ * Dev-only sink for the WebGL scene's self-reporting (`client/src/components/cloudscape/diagnostics.ts`).
+ * The scene can only fail in a browser, so it posts what it knows and this appends it to a log file
+ * that can be read back from the workspace - no devtools required.
+ */
+function vitePluginCloudscapeDiagnostics(): Plugin {
+  return {
+    name: "vite-plugin-cloudscape-diagnostics",
+    apply: "serve",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/__cloudscape-diag", (req, res) => {
+        let body = "";
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          res.statusCode = 204;
+          res.end();
+          try {
+            ensureLogDir();
+            fs.appendFileSync(
+              path.join(LOG_DIR, "cloudscape-diag.log"),
+              `${body}\n`
+            );
+            trimLogFile(
+              path.join(LOG_DIR, "cloudscape-diag.log"),
+              MAX_LOG_SIZE_BYTES
+            );
+          } catch {
+            /* diagnostics must never break the dev server */
+          }
+        });
+      });
+    },
+  };
+}
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+  vitePluginStorageProxy(),
+  vitePluginCloudscapeDiagnostics(),
+];
 
 export default defineConfig({
   plugins,

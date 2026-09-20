@@ -27,14 +27,27 @@ const _origin = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _forward = new THREE.Vector3();
+const _inverse = new THREE.Matrix4();
+
+/**
+ * The camera's world-to-view matrix, refreshed here rather than trusted from the renderer.
+ *
+ * three only copies `matrixWorld` into `matrixWorldInverse` inside `gl.render()`, and this canvas
+ * hands rendering to the post-processing composer (that subscription is why R3F skips its own
+ * render). Reading the stale copy would mean measuring depth against an identity matrix on the
+ * first frames - exactly when the reveal decision gets made - so the inverse is derived locally.
+ */
+export function viewFromCamera(camera: THREE.Camera) {
+  camera.updateMatrixWorld();
+  return _inverse.copy(camera.matrixWorld).invert();
+}
 
 /**
  * View-space depth of the world origin, which is where the centre island sits. Everything that
  * depends on "how far away am I" is measured this way so the fog and the layers agree.
  */
 export function viewDepthAtOrigin(camera: THREE.Camera) {
-  camera.updateMatrixWorld();
-  return -_origin.set(0, 0, 0).applyMatrix4(camera.matrixWorldInverse).z;
+  return -_origin.set(0, 0, 0).applyMatrix4(viewFromCamera(camera)).z;
 }
 
 /** World size of one CSS pixel at a given distance down the view axis. */
