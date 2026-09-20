@@ -381,23 +381,11 @@ export default function Home() {
     <main className="cloudscape" aria-label="Animated cloudscape">
       <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
       <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
-      <div className="cloudscape__atmosphere" aria-hidden="true">
-        <div className="cloudscape__sun-glow" />
-        <div className="cloudscape__cloud cloudscape__cloud--left" />
-        <div className="cloudscape__cloud cloudscape__cloud--right" />
-        <div className="cloudscape__cloud cloudscape__cloud--foreground" />
-        <div className="cloudscape__smoke"><span /><span /><span /></div>
-        <div className="cloudscape__birds"><i /><i /><i /></div>
-      </div>
       <div className="cloudscape__islands" aria-hidden="true">
-        <div className="cloudscape__warm-glow" />
         <img className="cloudscape__island cloudscape__island--tree" src="/tree-island.png" alt="" />
         <CloudscapeModel />
         <img className="cloudscape__island cloudscape__island--statue" src="/statue-island.png" alt="" />
       </div>
-      <div className="cloudscape__mist cloudscape__mist--left" aria-hidden="true" />
-      <div className="cloudscape__mist cloudscape__mist--right" aria-hidden="true" />
-      <div className="cloudscape__foreground-leaves" aria-hidden="true"><span /><span /><span /></div>
     </main>
   );
 }
