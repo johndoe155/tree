@@ -1,38 +1,24 @@
 /// <reference types="@react-three/fiber" />
-import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { Environment } from "@react-three/drei";
-import { EffectComposer, N8AO } from "@react-three/postprocessing";
+import { useFrame, useLoader, useThree } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-
-// The only mobile-specific rendering choice is the lighter HDRI asset.
-const IS_MOBILE =
-  typeof window !== "undefined" &&
-  (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 767px)").matches);
-const HDRI_URL = IS_MOBILE ? "/studio_small_08_1k.hdr" : "/studio_small_08_4k.hdr";
-const MODEL_URL = "/model.glb";
-const MODEL_ROTATION_Y = -Math.PI / 2;
-
-const FLOAT_SPEED = 1.1;
-const FLOAT_AMPLITUDE_BASE = 0.05;
-const VIEWPORT_FIT_FACTOR = 0.78;
-const BASE_FOV = 32;
-const MOBILE_FOV = 38;
-const KEY_LIGHT_INTENSITY = 2.4;
-const STUDIO_EXPOSURE = 0.68;
-const STUDIO_ENV_INTENSITY = 0.48;
-
-// Material feel. Both values are multiplied with the model's metallic/roughness
-// texture at render time, so the .glb itself is untouched.
-const MATERIAL_METALNESS = 0.05; // 0 = never metallic
-const MATERIAL_ROUGHNESS = 1.5; // >1 pushes rougher (final value caps at 1)
+import {
+  FLOAT_AMPLITUDE_BASE,
+  FLOAT_SPEED,
+  MODEL_URL,
+  MODEL_ROTATION_Y,
+  VIEWPORT_FIT_FACTOR,
+  centerScale,
+} from "./constants";
+import type { Director } from "./director";
 
 const REDUCED_MOTION =
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const FLOAT_AMPLITUDE = REDUCED_MOTION ? 0 : FLOAT_AMPLITUDE_BASE;
+
 const FLOAT_PATH = [
   { phase: 0, value: 0 },
   { phase: 0.16, value: -1 },
@@ -57,6 +43,11 @@ function sampleFloatPath(time: number) {
   return 0;
 }
 
+// Material feel. Both values are multiplied with the model's metallic/roughness
+// texture at render time, so the .glb itself is untouched.
+const MATERIAL_METALNESS = 0.05; // 0 = never metallic
+const MATERIAL_ROUGHNESS = 1.5; // >1 pushes rougher (final value caps at 1)
+
 // These uniforms and the shader patch are retained from the donor so the model's
 // PBR materials remain byte-for-byte faithful. The hold uniforms are inert here:
 // the standalone page's press-and-hold interaction is intentionally not mounted.
@@ -80,14 +71,6 @@ const HOLD_RIM_BOOST = 2.2;
 const HOLD_FLARE_INTENSITY = 3.0;
 const HOLD_GLOW_COLOR = new THREE.Color("#ffd3e2");
 const HOLD_GLOW_STRENGTH = 1.1;
-
-// The host app uses React 19 typings while this donor integration targets the
-// React Three Fiber v8 JSX runtime; these aliases preserve the exact elements
-// while keeping the host compiler's JSX namespace happy.
-const R3FGroup = "group" as any;
-const R3FPrimitive = "primitive" as any;
-const R3FDirectionalLight = "directionalLight" as any;
-const R3FHemisphereLight = "hemisphereLight" as any;
 
 function createHoldUniforms() {
   return {
@@ -118,11 +101,20 @@ function createHoldUniforms() {
   };
 }
 
-function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof createHoldUniforms>) {
+/**
+ * The hold shader is written on top of the model's own PBR program, so the material keeps every
+ * other chunk three.js gives it - including `<fog_fragment>`. That is what lets the centre island
+ * pick up a touch of atmosphere on the side that faces away from the camera without anyone
+ * hand-painting it.
+ */
+function installHoldShader(
+  material: THREE.Material,
+  uniforms: ReturnType<typeof createHoldUniforms>
+) {
   if (material.userData.holdUniforms) return material.userData.holdUniforms;
   material.userData.holdUniforms = uniforms;
 
-  material.onBeforeCompile = (shader) => {
+  material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -148,7 +140,7 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
         varying float vHoldSideMask;
         varying float vHoldSweepMask;
         varying vec3 vHoldViewNormal;
-        `,
+        `
       )
       .replace(
         "#include <begin_vertex>",
@@ -181,7 +173,7 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
           vHoldSweepMask = holdBandMask;
           vHoldViewNormal = normalize( normalMatrix * holdPerturbedObjN );
         }
-        `,
+        `
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -204,7 +196,7 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
         varying float vHoldSideMask;
         varying float vHoldSweepMask;
         varying vec3 vHoldViewNormal;
-        `,
+        `
       )
       .replace(
         "#include <lights_fragment_begin>",
@@ -219,7 +211,7 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
           material.specularF90 = mix( material.specularF90, 1.0, holdActive * 0.6 );
         }
         #include <lights_fragment_begin>
-        `,
+        `
       )
       .replace(
         "#include <opaque_fragment>",
@@ -237,7 +229,7 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
           outgoingLight += vec3( uFlareIntensity ) * holdEdge * holdActive;
         }
         #include <opaque_fragment>
-        `,
+        `
       );
   };
 
@@ -245,80 +237,39 @@ function installHoldShader(material: THREE.Material, uniforms: ReturnType<typeof
   return uniforms;
 }
 
-function ResponsiveRig() {
-  const { camera, gl } = useThree();
-  useEffect(() => {
-    camera.lookAt(0, 0, 0);
-  }, [camera]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const aspect = window.innerWidth / window.innerHeight;
-      if (camera instanceof THREE.PerspectiveCamera) {
-        camera.fov = aspect < 0.72 ? MOBILE_FOV : BASE_FOV;
-        camera.updateProjectionMatrix();
-      }
-      gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [camera, gl]);
-  return null;
-}
-
-function Model() {
-  const gltf = useLoader(GLTFLoader, MODEL_URL, (loader) => loader.setMeshoptDecoder(MeshoptDecoder));
-  const { gl } = useThree();
+export default function CloudscapeModel({ director }: { director: Director }) {
+  const gltf = useLoader(GLTFLoader, MODEL_URL, loader =>
+    loader.setMeshoptDecoder(MeshoptDecoder)
+  );
+  const gl = useThree(state => state.gl);
   const fitRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
   const normalizedScaleRef = useRef(1);
-  const floatTimeRef = useRef(0);
   const holdUniforms = useRef(createHoldUniforms());
 
-  const { scene, bottomY } = useMemo(() => {
+  const { scene } = useMemo(() => {
     const cloned = gltf.scene.clone(true);
-    cloned.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      }
-    });
-    cloned.updateMatrixWorld(true);
+    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
+    const patchedMaterials = new Set<THREE.Material>();
+    let geomMin = new THREE.Vector3(Infinity, Infinity, Infinity);
+    let geomMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
 
-    const box = new THREE.Box3().setFromObject(cloned);
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    const geomMin = new THREE.Vector3(Infinity, Infinity, Infinity);
-    const geomMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    cloned.traverse((child) => {
+    cloned.traverse(child => {
       const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.geometry) return;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      if (!mesh.geometry || !mesh.material) return;
       mesh.geometry.computeBoundingBox();
       const bb = mesh.geometry.boundingBox;
-      if (!bb) return;
-      geomMin.min(bb.min);
-      geomMax.max(bb.max);
-    });
-    holdUniforms.current.uMinZ.value = geomMin.z;
-    holdUniforms.current.uMaxZ.value = geomMax.z;
-    holdUniforms.current.uModelScale.value = Math.max(
-      geomMax.x - geomMin.x,
-      geomMax.y - geomMin.y,
-      geomMax.z - geomMin.z,
-      1e-4,
-    );
-
-    const patchedMaterials = new Set<THREE.Material>();
-    cloned.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => {
+      if (bb) {
+        geomMin = geomMin.min(bb.min);
+        geomMax = geomMax.max(bb.max);
+      }
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach(material => {
         if (patchedMaterials.has(material)) return;
         patchedMaterials.add(material);
         const standard = material as THREE.MeshStandardMaterial;
@@ -326,99 +277,63 @@ function Model() {
           standard.metalness = MATERIAL_METALNESS;
           standard.roughness = MATERIAL_ROUGHNESS;
         }
-        holdUniforms.current = installHoldShader(material, holdUniforms.current);
-      });
-    });
-
-    cloned.position.sub(center);
-    cloned.rotation.y = MODEL_ROTATION_Y;
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    normalizedScaleRef.current = 1 / maxDim;
-    return { scene: cloned, bottomY: -size.y / 2 / maxDim };
-    const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
-    cloned.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.material) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => {
-        Object.values(material).forEach((value) => {
+        // Keep the plate textures crisp at grazing angles: anisotropic filtering is what stops
+        // the model's own surfaces from smearing while the islands around them stay sharp.
+        Object.values(material).forEach(value => {
           if (value instanceof THREE.Texture) {
             value.anisotropy = maxAnisotropy;
             value.needsUpdate = true;
           }
         });
+        holdUniforms.current = installHoldShader(
+          material,
+          holdUniforms.current
+        );
       });
     });
+
+    holdUniforms.current.uMinZ.value = geomMin.z;
+    holdUniforms.current.uMaxZ.value = geomMax.z;
+    holdUniforms.current.uModelScale.value = Math.max(
+      geomMax.x - geomMin.x,
+      geomMax.y - geomMin.y,
+      geomMax.z - geomMin.z,
+      1e-4
+    );
+
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    cloned.position.sub(center);
+    cloned.rotation.y = MODEL_ROTATION_Y;
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    normalizedScaleRef.current = 1 / maxDim;
+    return { scene: cloned };
   }, [gltf, gl]);
 
-  useFrame((_state, delta) => {
-    const viewport = _state.viewport;
-    const responsiveScale = Math.min(viewport.width, viewport.height) * VIEWPORT_FIT_FACTOR;
-    fitRef.current?.scale.setScalar(normalizedScaleRef.current * responsiveScale);
-    floatTimeRef.current += delta;
+  useFrame(state => {
+    const viewport = state.viewport;
+    // `centerScale` used to shrink the whole canvas from CSS; now that the canvas also carries the
+    // sky, only the centre island scales down on small screens.
+    const responsive =
+      Math.min(viewport.width, viewport.height) *
+      VIEWPORT_FIT_FACTOR *
+      centerScale(state.size.width);
+    fitRef.current?.scale.setScalar(normalizedScaleRef.current * responsive);
     if (floatRef.current) {
-      floatRef.current.position.y = sampleFloatPath(floatTimeRef.current) * FLOAT_AMPLITUDE;
+      floatRef.current.position.y =
+        sampleFloatPath(director.time) * FLOAT_AMPLITUDE;
     }
   });
 
   return (
-    <R3FGroup ref={fitRef}>
-      <R3FGroup ref={floatRef}>
-        <R3FPrimitive object={scene} />
-      </R3FGroup>
-    </R3FGroup>
-  );
-}
-
-function Scene() {
-  return (
-    <>
-      <Environment files={HDRI_URL} environmentIntensity={STUDIO_ENV_INTENSITY} />
-      <R3FDirectionalLight
-        position={[4.8, 4.2, 2.0]}
-        intensity={KEY_LIGHT_INTENSITY}
-        color="#fffaf4"
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-near={0.1}
-        shadow-camera-far={12}
-        shadow-camera-left={-3}
-        shadow-camera-right={3}
-        shadow-camera-top={3}
-        shadow-camera-bottom={-3}
-        shadow-bias={-0.0002}
-        shadow-normalBias={0.025}
-      />
-      <R3FDirectionalLight position={[-3.5, 3.2, -4.5]} intensity={0.55} color="#9aa8d0" />
-      <R3FDirectionalLight position={[2.5, 4.2, -3.5]} intensity={0.8} color="#c7cbe0" />
-      <R3FHemisphereLight args={["#9da8bb", "#090a0d", 0.14]} />
-      <Suspense fallback={null}>
-        <Model />
-      </Suspense>
-      <EffectComposer multisampling={0}>
-        <N8AO aoRadius={0.35} intensity={1.35} distanceFalloff={1.2} />
-      </EffectComposer>
-    </>
-  );
-}
-
-export default function CloudscapeModel() {
-  return (
-    <Canvas
-      className="cloudscape__model"
-      shadows={{ type: THREE.PCFSoftShadowMap }}
-      dpr={[1, 2]}
-      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-      camera={{ position: [0, 0.15, 5.8], fov: BASE_FOV, near: 0.1, far: 100 }}
-      onCreated={({ gl }) => {
-        gl.setClearColor(0x000000, 0);
-        gl.outputColorSpace = THREE.SRGBColorSpace;
-        gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = STUDIO_EXPOSURE;
-      }}
-    >
-      <ResponsiveRig />
-      <Scene />
-    </Canvas>
+    <group ref={fitRef}>
+      <group ref={floatRef}>
+        <primitive object={scene} />
+      </group>
+    </group>
   );
 }

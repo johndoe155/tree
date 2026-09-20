@@ -139,6 +139,9 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      postprocessing:
+        specifier: ^6.39.5
+        version: 6.39.5(three@0.180.0)
       react:
         specifier: ^19.2.1
         version: 19.2.1
