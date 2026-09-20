@@ -66,7 +66,11 @@ export function readDiag(): DiagEntry[] {
 /** Mirrored to the tab title so the state is readable without devtools, and survives a screenshot. */
 function setTitle(text: string) {
   if (typeof document === "undefined") return;
-  document.title = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  // Errors lead, because the tab title has a budget and the reason is the part that must survive it.
+  const title = lastError
+    ? `cloudscape ⚠ ${lastError} · ${text}`
+    : `cloudscape · ${text}`;
+  document.title = title.length > 200 ? `${title.slice(0, 197)}...` : title;
 }
 
 /** Per-layer progress, reported by whoever loads it, so the overlay needs no prop plumbing. */
@@ -136,7 +140,7 @@ let titleTimer = 0;
 
 function noteError(text: string) {
   if (text === lastError) return;
-  lastError = text.slice(0, 220);
+  lastError = text.slice(0, 160);
   setDiagSummary(`${readDiagLayers()} | ${loopInfo} | error: ${lastError}`);
 }
 
