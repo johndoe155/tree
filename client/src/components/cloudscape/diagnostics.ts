@@ -83,6 +83,14 @@ export function readDiagLayers() {
   return parts.join(" ");
 }
 
+/**
+ * True once each named layer has reported "ready". The reveal needs this rather than a frame count
+ * alone: an empty scene renders happily, and a frame of nothing is not a reason to unmask a canvas.
+ */
+export function diagLayersReady(names: string[]) {
+  return names.every(name => layers.get(name) === "ready");
+}
+
 /** The live one-line summary of the scene, kept by the render loop for the overlay. */
 let summary = "starting";
 export function setDiagSummary(value: string) {

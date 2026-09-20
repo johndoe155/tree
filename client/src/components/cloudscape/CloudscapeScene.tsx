@@ -37,6 +37,7 @@ import {
 import { PLANE_VERTEX, SKY_FRAGMENT } from "./shaders";
 import { useStudioEnvironment, useTexture } from "./assets";
 import {
+  diagLayersReady,
   logDiag,
   readDiagLayers,
   setDiagLayer,
@@ -238,77 +239,113 @@ function PaintWatcher({ onPainted }: { onPainted: () => void }) {
   const gl = useThree(state => state.gl);
   const camera = useThree(state => state.camera);
   const size = useThree(state => state.size);
+  // Who owns rendering, and who is subscribed: the two numbers that name a starved frame loop.
+  const priority = useThree(state => state.internal.priority);
+  const subscribers = useThree(state => state.internal.subscribers.length);
+  const frameloop = useThree(state => state.frameloop);
   const done = useRef(false);
   const probe = useRef(new Uint8Array(4));
-  const last = useRef("no sample yet");
+  const last = useRef("not sampled yet");
+  const startedAt = useRef(0);
 
-  // Above the composer's priority, so this runs after the frame has been drawn to the canvas.
+  /*
+   * The reveal waits for a frame that was really rendered. Reading it that way matters because
+   * `useFrame`'s second argument is not an ordering hint: any subscriber with a positive priority
+   * tells R3F "I will render", and R3F then drops `gl.render` for the whole tree
+   * (fiber/dist/index: `if (!state.internal.priority && state.gl.render) ...`). An earlier version of
+   * this watcher probed at priority 20 and so silently took rendering away from everyone, including
+   * the post-processing composer - the loop ran, nothing drew, the buffer stayed the clear colour,
+   * and the gate that needed a painted frame never opened. Probing at priority 0 keeps the frame loop
+   * exactly as the composer expects it.
+   *
+   * `info.render.frame` is incremented inside WebGLRenderer.render and is never zeroed - three's
+   * info.reset() clears calls/triangles/points/lines only, and postprocessing calls it after its last
+   * pass - so it is the one reliable proof that a frame was drawn. `calls` is deliberately not part of
+   * the test: this subscriber runs before the composer, so it would always read the value left by
+   * that reset, which is zero. Content comes from the layers themselves instead, since a scene with no
+   * meshes still renders frames. Pixels are read for the report only: at this point in the frame the
+   * drawing buffer has been presented, and reading it then is not guaranteed to return the image.
+   */
   useFrame(() => {
-    // readPixels synchronises the GPU, so probing stops the moment the reveal has been granted.
-    if (done.current) return;
     const info = gl.info.render;
-    const context = gl.getContext();
-    const width = gl.domElement.width;
-    const height = gl.domElement.height;
-    let painted = false;
-    if (width > 1 && height > 1) {
-      let difference = 0;
-      const seen: string[] = [];
-      for (const [fx, fy] of PROBE_POINTS) {
-        // WebGL reads bottom-up, hence the flipped y.
-        const x = Math.min(width - 1, Math.floor(fx * width));
-        const y = Math.min(height - 1, Math.floor((1 - fy) * height));
-        try {
-          context.readPixels(
-            x,
-            y,
-            1,
-            1,
-            context.RGBA,
-            context.UNSIGNED_BYTE,
-            probe.current
-          );
-        } catch {
-          break;
-        }
-        const r = probe.current[0];
-        const g = probe.current[1];
-        const b = probe.current[2];
-        seen.push(
-          `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`
+    if (done.current) return;
+
+    if (info.frame > 0 && diagLayersReady(["plate", "islands"])) {
+      done.current = true;
+      // One rAF later so the frame being waited on has actually reached the screen before the canvas
+      // is unmasked.
+      requestAnimationFrame(() => {
+        logDiag(
+          `painted: frames=${info.frame} layers=${readDiagLayers()} samples=${last.current} programs=${gl.info.programs?.length ?? 0}`
         );
-        // The plate is never uniform, so anything that leaves the clear colour means pixels arrived.
-        difference += Math.abs(r - 23) + Math.abs(g - 19) + Math.abs(b - 49);
-      }
-      last.current = seen.length ? seen.join(" ") : "readPixels unavailable";
-      painted = difference > 40;
+        onPainted();
+      });
+      return;
     }
 
-    if (!done.current && info.frame > 0 && painted) {
-      done.current = true;
+    if (startedAt.current === 0) startedAt.current = performance.now();
+    if (performance.now() - startedAt.current > 6000) {
+      startedAt.current = performance.now();
       logDiag(
-        `painted: frames=${info.frame} buffer=${width}x${height} samples=${last.current} programs=${gl.info.programs?.length ?? 0}`
+        `no frame after 6s: frames=${info.frame} calls=${info.calls} r3fPriority=${priority} subscribers=${subscribers} frameloop=${frameloop} buffer=${gl.domElement.width}x${gl.domElement.height}`
       );
-      onPainted();
     }
-  }, 20);
+  });
 
   useEffect(() => {
     let id = 0;
     const report = () => {
-      if (done.current) {
+      // A readPixels forces a GPU sync, so this samples at a tenth of a hertz and only while the
+      // reveal is still pending.
+      if (!done.current) {
+        const context = gl.getContext();
+        const width = gl.domElement.width;
+        const height = gl.domElement.height;
+        if (width > 1 && height > 1) {
+          const seen: string[] = [];
+          for (const [fx, fy] of PROBE_POINTS) {
+            const x = Math.min(width - 1, Math.floor(fx * width));
+            const y = Math.min(height - 1, Math.floor((1 - fy) * height));
+            try {
+              context.readPixels(
+                x,
+                y,
+                1,
+                1,
+                context.RGBA,
+                context.UNSIGNED_BYTE,
+                probe.current
+              );
+            } catch {
+              break;
+            }
+            seen.push(
+              `#${Array.from(probe.current.slice(0, 3))
+                .map(v => v.toString(16).padStart(2, "0"))
+                .join("")}`
+            );
+          }
+          last.current = seen.length
+            ? seen.join(" ")
+            : "readPixels unavailable";
+        }
+      }
+      // Keep reporting until the heavy layers settle too: after the reveal the title is the only
+      // place left that says whether the model arrived, and that is the question being asked.
+      const layers = readDiagLayers();
+      if (done.current && /model:(ready|failed)/.test(layers)) {
         window.clearInterval(id);
         return;
       }
       const info = gl.info.render;
       setDiagSummary(
-        `${readDiagLayers()} | loop frames=${info.frame} buffer=${gl.domElement.width}x${gl.domElement.height} css=${Math.round(size.width)}x${Math.round(size.height)} dpr=${gl.getPixelRatio().toFixed(2)} samples=${last.current} programs=${gl.info.programs?.length ?? 0} geometries=${gl.info.memory.geometries} textures=${gl.info.memory.textures} depth=${viewDepthAtOrigin(camera).toFixed(2)} contextLost=${gl.getContext().isContextLost()}`
+        `${readDiagLayers()} | loop frames=${info.frame} calls=${info.calls} r3fPriority=${priority} subs=${subscribers} loop=${frameloop} buffer=${gl.domElement.width}x${gl.domElement.height} css=${Math.round(size.width)}x${Math.round(size.height)} dpr=${gl.getPixelRatio().toFixed(2)} samples=${last.current} depth=${viewDepthAtOrigin(camera).toFixed(2)} lost=${gl.getContext().isContextLost()}`
       );
     };
     report();
-    id = window.setInterval(report, 1500);
+    id = window.setInterval(report, 1000);
     return () => window.clearInterval(id);
-  }, [gl, camera, size]);
+  }, [gl, camera, size, priority, subscribers, frameloop]);
 
   return null;
 }
