@@ -45,6 +45,19 @@ body {
   background: radial-gradient(circle at 50% 42%, transparent 0 42%, rgba(13, 5, 35, 0.24) 100%);
 }
 
+.cloudscape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0.14;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: film-grain 0.22s steps(2) infinite;
+}
+
 .cloudscape__canvas,
 .cloudscape__fallback {
   position: absolute;
@@ -88,6 +101,35 @@ body {
   z-index: 2;
   pointer-events: none;
 }
+
+.cloudscape__atmosphere,
+.cloudscape__mist,
+.cloudscape__foreground-leaves { position: absolute; inset: 0; pointer-events: none; }
+.cloudscape__atmosphere { z-index: 2; overflow: hidden; }
+.cloudscape__sun-glow { position: absolute; width: min(58vw, 760px); height: min(58vw, 760px); left: 50%; top: 8%; transform: translateX(-50%); border-radius: 50%; opacity: 0.4; background: radial-gradient(circle, rgba(255, 206, 149, 0.18) 0, rgba(238, 151, 190, 0.08) 34%, transparent 70%); filter: blur(10px); animation: sun-breathe 11s ease-in-out infinite; }
+.cloudscape__cloud { position: absolute; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(237, 220, 255, 0.3) 0, rgba(193, 158, 228, 0.13) 42%, transparent 73%); filter: blur(18px); will-change: transform; }
+.cloudscape__cloud--left { width: 38vw; height: 13vw; left: -8vw; top: 42%; animation: cloud-drift-left 25s ease-in-out infinite alternate; }
+.cloudscape__cloud--right { width: 34vw; height: 12vw; right: -7vw; top: 49%; animation: cloud-drift-right 31s ease-in-out infinite alternate; }
+.cloudscape__cloud--foreground { width: 48vw; height: 15vw; left: 26%; bottom: -6vw; opacity: 0.5; filter: blur(26px); animation: foreground-breathe 17s ease-in-out infinite alternate; }
+.cloudscape__warm-glow { position: absolute; z-index: 1; left: 50%; top: 38%; width: min(18vw, 250px); height: min(18vw, 250px); transform: translate(-50%, -50%); border-radius: 50%; opacity: 0.52; background: radial-gradient(circle, rgba(255, 190, 108, 0.3) 0, rgba(255, 147, 116, 0.12) 30%, transparent 70%); filter: blur(14px); animation: lantern-pulse 5.8s ease-in-out infinite; }
+.cloudscape__mist { z-index: 4; width: 31vw; height: 12vw; top: 37%; opacity: 0.48; filter: blur(13px); background: radial-gradient(ellipse at center, rgba(235, 224, 255, 0.42) 0, rgba(191, 171, 225, 0.2) 42%, transparent 74%); will-change: transform; }
+.cloudscape__mist--left { left: -7vw; animation: mist-left 18s ease-in-out infinite alternate; }
+.cloudscape__mist--right { right: -7vw; animation: mist-right 21s ease-in-out infinite alternate; }
+.cloudscape__smoke { position: absolute; left: 51.5%; top: 19%; width: 90px; height: 130px; opacity: 0.18; filter: blur(8px); }
+.cloudscape__smoke span { position: absolute; width: 32px; height: 32px; border-radius: 50%; background: rgba(224, 211, 238, 0.8); animation: smoke-rise 8s ease-in-out infinite; }
+.cloudscape__smoke span:nth-child(1) { left: 22px; top: 88px; animation-delay: -1s; }
+.cloudscape__smoke span:nth-child(2) { left: 42px; top: 56px; animation-delay: -3.5s; }
+.cloudscape__smoke span:nth-child(3) { left: 18px; top: 18px; animation-delay: -6s; }
+.cloudscape__birds { position: absolute; top: 25%; left: 33%; width: 90px; height: 42px; opacity: 0.38; animation: birds-glide 24s linear infinite; }
+.cloudscape__birds i { position: absolute; width: 15px; height: 7px; border-top: 2px solid rgba(45, 29, 74, 0.8); border-radius: 50%; transform: rotate(-14deg); }
+.cloudscape__birds i:nth-child(1) { left: 0; top: 16px; }
+.cloudscape__birds i:nth-child(2) { left: 27px; top: 4px; transform: rotate(12deg) scale(0.7); }
+.cloudscape__birds i:nth-child(3) { left: 51px; top: 21px; transform: rotate(-8deg) scale(0.55); }
+.cloudscape__foreground-leaves { z-index: 6; overflow: hidden; }
+.cloudscape__foreground-leaves span { position: absolute; width: 115px; height: 210px; border-radius: 100% 0 100% 0; background: linear-gradient(135deg, rgba(33, 20, 63, 0.72), rgba(116, 67, 125, 0.18)); filter: blur(5px); transform-origin: bottom center; animation: leaf-sway 7s ease-in-out infinite; }
+.cloudscape__foreground-leaves span:nth-child(1) { left: -54px; bottom: -88px; transform: rotate(26deg); }
+.cloudscape__foreground-leaves span:nth-child(2) { right: -66px; top: 5%; transform: rotate(-34deg) scale(0.8); animation-delay: -2.2s; }
+.cloudscape__foreground-leaves span:nth-child(3) { right: 8%; bottom: -125px; transform: rotate(-12deg) scale(0.65); animation-delay: -4.3s; }
 
 .cloudscape__island {
   position: absolute;
@@ -171,7 +213,27 @@ body {
     animation: none;
     transform: translateY(-50%);
   }
+
+  .cloudscape::before,
+  .cloudscape__sun-glow,
+  .cloudscape__cloud,
+  .cloudscape__smoke span,
+  .cloudscape__birds,
+  .cloudscape__foreground-leaves span,
+  .cloudscape__warm-glow { animation: none; }
 }
+
+@keyframes film-grain { 0% { transform: translate(0, 0); } 25% { transform: translate(1%, -1%); } 50% { transform: translate(-1%, 1%); } 75% { transform: translate(1%, 1%); } 100% { transform: translate(-1%, -1%); } }
+@keyframes sun-breathe { 0%, 100% { opacity: 0.28; transform: translateX(-50%) scale(0.96); } 50% { opacity: 0.46; transform: translateX(-50%) scale(1.04); } }
+@keyframes lantern-pulse { 0%, 100% { opacity: 0.36; transform: translate(-50%, -50%) scale(0.92); } 50% { opacity: 0.62; transform: translate(-50%, -50%) scale(1.07); } }
+@keyframes cloud-drift-left { from { transform: translate3d(-2vw, 2px, 0); } to { transform: translate3d(8vw, -7px, 0); } }
+@keyframes cloud-drift-right { from { transform: translate3d(2vw, 0, 0); } to { transform: translate3d(-9vw, 8px, 0); } }
+@keyframes foreground-breathe { from { transform: translate3d(-5vw, 0, 0) scale(0.94); } to { transform: translate3d(5vw, -1vw, 0) scale(1.06); } }
+@keyframes mist-left { from { transform: translate3d(-3vw, 5px, 0) scale(0.9); } to { transform: translate3d(9vw, -10px, 0) scale(1.1); } }
+@keyframes mist-right { from { transform: translate3d(4vw, 2px, 0) scale(0.95); } to { transform: translate3d(-10vw, -8px, 0) scale(1.08); } }
+@keyframes smoke-rise { 0% { opacity: 0; transform: translate(0, 18px) scale(0.55); } 25% { opacity: 0.65; } 100% { opacity: 0; transform: translate(24px, -42px) scale(1.3); } }
+@keyframes birds-glide { from { transform: translate3d(-2vw, 0, 0); } to { transform: translate3d(34vw, -3vh, 0); } }
+@keyframes leaf-sway { 0%, 100% { margin-left: 0; rotate: -2deg; } 50% { margin-left: 8px; rotate: 4deg; } }
 
 @media (max-width: 900px) {
   .cloudscape__islands {

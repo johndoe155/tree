@@ -87,6 +87,7 @@ const HOLD_GLOW_STRENGTH = 1.1;
 const R3FGroup = "group" as any;
 const R3FPrimitive = "primitive" as any;
 const R3FDirectionalLight = "directionalLight" as any;
+const R3FPointLight = "pointLight" as any;
 const R3FHemisphereLight = "hemisphereLight" as any;
 
 function createHoldUniforms() {
@@ -391,6 +392,8 @@ function Scene() {
       />
       <R3FDirectionalLight position={[-3.5, 3.2, -4.5]} intensity={0.55} color="#9aa8d0" />
       <R3FDirectionalLight position={[2.5, 4.2, -3.5]} intensity={0.8} color="#c7cbe0" />
+      <R3FDirectionalLight position={[4.2, 2.4, 2.8]} intensity={0.22} color="#ffd39a" />
+      <R3FPointLight position={[0.45, 0.55, 1.8]} intensity={0.7} distance={5.5} decay={2} color="#ffb06f" />
       <R3FHemisphereLight args={["#9da8bb", "#090a0d", 0.14]} />
       <Suspense fallback={null}>
         <Model />
