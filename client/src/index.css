@@ -1,0 +1,194 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  color-scheme: dark;
+  background: #171331;
+  font-family: system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #171331;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.cloudscape {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  isolation: isolate;
+  background: #171331;
+}
+
+.cloudscape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.12;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle at 50% 42%, transparent 0 42%, rgba(13, 5, 35, 0.24) 100%);
+}
+
+.cloudscape__canvas,
+.cloudscape__fallback {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cloudscape__canvas {
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 420ms ease-out;
+}
+
+.cloudscape__canvas.is-ready {
+  opacity: 1;
+}
+
+.cloudscape__islands {
+  --island-center-scale: 1;
+  --island-tree-width: clamp(178px, 25.5vw, 340px);
+  --island-statue-width: clamp(168px, 23.5vw, 312px);
+  --island-side-offset: clamp(24px, 4.5vw, 58px);
+  --island-upper-axis: 18%;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.cloudscape__model {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scale(var(--island-center-scale));
+  transform-origin: center center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.cloudscape__island {
+  position: absolute;
+  top: var(--island-upper-axis);
+  display: block;
+  width: var(--island-side-width);
+  height: auto;
+  max-width: 28vw;
+  object-fit: contain;
+  transform: translateY(-50%);
+  will-change: transform;
+  z-index: 3;
+}
+
+.cloudscape__island--tree {
+  --island-side-width: var(--island-tree-width);
+  left: var(--island-side-offset);
+  animation: island-float-tree 8.8s ease-in-out -2.1s infinite;
+}
+
+.cloudscape__island--statue {
+  --island-side-width: var(--island-statue-width);
+  right: var(--island-side-offset);
+  animation: island-float-statue 9.6s ease-in-out -4.7s infinite;
+}
+
+@keyframes island-float-tree {
+  0%,
+  9% {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+  30%,
+  34% {
+    transform: translate3d(0, -3px, 0) rotate(0.25deg);
+  }
+  63%,
+  67% {
+    transform: translate3d(0, 3px, 0) rotate(-0.2deg);
+  }
+  92%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+}
+
+@keyframes island-float-statue {
+  0%,
+  9% {
+    transform: translate3d(0, 2px, 0) rotate(0.25deg);
+  }
+  31%,
+  35% {
+    transform: translate3d(0, -3px, 0) rotate(-0.25deg);
+  }
+  64%,
+  68% {
+    transform: translate3d(0, 3px, 0) rotate(0.2deg);
+  }
+  93%,
+  100% {
+    transform: translate3d(0, 2px, 0) rotate(0.25deg);
+  }
+}
+
+.cloudscape__fallback {
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 400ms ease-out;
+}
+
+.cloudscape__fallback.is-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloudscape::after {
+    opacity: 0.08;
+  }
+
+  .cloudscape__island {
+    animation: none;
+    transform: translateY(-50%);
+  }
+}
+
+@media (max-width: 900px) {
+  .cloudscape__islands {
+    --island-center-scale: 0.95;
+    --island-tree-width: clamp(142px, 27vw, 255px);
+    --island-statue-width: clamp(132px, 24vw, 232px);
+    --island-side-offset: clamp(18px, 3.8vw, 42px);
+    --island-upper-axis: 20%;
+  }
+}
+
+@media (max-width: 560px) {
+  .cloudscape__islands {
+    --island-center-scale: 0.9;
+    --island-tree-width: clamp(102px, 27vw, 148px);
+    --island-statue-width: clamp(95px, 23vw, 134px);
+    --island-side-offset: 14px;
+    --island-upper-axis: 22%;
+  }
+}
