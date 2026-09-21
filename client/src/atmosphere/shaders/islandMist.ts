@@ -48,6 +48,12 @@ void main() {
   mist = clamp(mist, 0.0, 0.85);
   mist *= mix(1.0, 0.38, islandA);
 
+  // Feather to alpha 0 well inside the canvas so the quad's left/right
+  // (and top/bottom) edges never draw a hard seam against the sky.
+  float edgeX = smoothstep(0.0, 0.22, uv.x) * (1.0 - smoothstep(0.78, 1.0, uv.x));
+  float edgeY = smoothstep(0.0, 0.16, uv.y) * (1.0 - smoothstep(0.84, 1.0, uv.y));
+  mist *= edgeX * edgeY;
+
   vec3 col = mix(vec3(0.80, 0.54, 0.78), vec3(0.96, 0.74, 0.82), n3);
   outColor = vec4(col * mist, mist * 0.90);
 }`;
