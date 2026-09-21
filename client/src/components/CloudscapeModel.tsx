@@ -6,6 +6,7 @@ import { EffectComposer, N8AO } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import ModelAccents, { SunRimLight } from "@/components/model-accents/ModelAccents";
 
 // The only mobile-specific rendering choice is the lighter HDRI asset.
 const IS_MOBILE =
@@ -365,6 +366,7 @@ function Model() {
     <R3FGroup ref={fitRef}>
       <R3FGroup ref={floatRef}>
         <R3FPrimitive object={scene} />
+        <ModelAccents />
       </R3FGroup>
     </R3FGroup>
   );
@@ -392,6 +394,7 @@ function Scene() {
       <R3FDirectionalLight position={[-3.5, 3.2, -4.5]} intensity={0.55} color="#9aa8d0" />
       <R3FDirectionalLight position={[2.5, 4.2, -3.5]} intensity={0.8} color="#c7cbe0" />
       <R3FHemisphereLight args={["#9da8bb", "#090a0d", 0.14]} />
+      <SunRimLight />
       <Suspense fallback={null}>
         <Model />
       </Suspense>

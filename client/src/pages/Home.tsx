@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
 import CloudscapeModel from "@/components/CloudscapeModel";
+import AtmosphereBack from "@/atmosphere/AtmosphereBack";
+import AtmosphereFront from "@/atmosphere/AtmosphereFront";
+import FilmGrain from "@/atmosphere/FilmGrain";
+import "@/atmosphere/atmosphere.css";
 
 const PHOTO_URL = "/cloudscape-source.webp";
 const DEPTH_URL = "/cloudscape-depth.webp";
@@ -381,11 +385,14 @@ export default function Home() {
     <main className="cloudscape" aria-label="Animated cloudscape">
       <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
       <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
+      <AtmosphereBack />
       <div className="cloudscape__islands" aria-hidden="true">
         <img className="cloudscape__island cloudscape__island--tree" src="/tree-island.png" alt="" />
         <CloudscapeModel />
         <img className="cloudscape__island cloudscape__island--statue" src="/statue-island.png" alt="" />
       </div>
+      <AtmosphereFront />
+      <FilmGrain />
     </main>
   );
 }
