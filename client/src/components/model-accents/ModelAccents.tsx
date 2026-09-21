@@ -17,6 +17,37 @@ const LANTERN_R = new THREE.Vector3(0.013, 0.214, 0.13);
 const CHIMNEY = new THREE.Vector3(-0.036, 0.505, 0.106);
 const WALL_N = new THREE.Vector3(-0.29, 0.0, 0.96).normalize();
 
+function hash21(x: number, y: number) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+function noise2(x: number, y: number) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash21(ix, iy);
+  const b = hash21(ix + 1, iy);
+  const c = hash21(ix, iy + 1);
+  const d = hash21(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+function fbm2(x: number, y: number) {
+  let v = 0;
+  let a = 0.5;
+  let px = x;
+  let py = y;
+  for (let i = 0; i < 4; i++) {
+    v += a * noise2(px, py);
+    px = px * 2.03 + 17.1;
+    py = py * 2.03 + 9.4;
+    a *= 0.5;
+  }
+  return v;
+}
+
 function makeGlowTexture() {
   const size = 64;
   const data = new Uint8Array(size * size * 4);
@@ -40,11 +71,36 @@ function makeGlowTexture() {
   return tex;
 }
 
-const GLOW_TEX = typeof window !== "undefined" ? makeGlowTexture() : null;
+function makeSmokeTexture() {
+  const size = 128;
+  const data = new Uint8Array(size * size * 4);
+  const cx = (size - 1) * 0.5;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - cx) / cx;
+      const dy = (y - cx) / cx;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      const envelope = Math.max(0, 1 - r);
+      const n = fbm2(x * 0.07, y * 0.07);
+      const fall = Math.pow(envelope, 1.35) * (0.35 + 0.65 * n);
+      const i = (y * size + x) * 4;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = Math.round(Math.min(1, fall) * 255);
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.needsUpdate = true;
+  return tex;
+}
 
-function additiveMat(color: string) {
+const GLOW_TEX = typeof window !== "undefined" ? makeGlowTexture() : null;
+const SMOKE_TEX = typeof window !== "undefined" ? makeSmokeTexture() : null;
+
+function additiveMat(color: string, map: THREE.DataTexture | null = GLOW_TEX) {
   return new THREE.MeshBasicMaterial({
-    map: GLOW_TEX,
+    map,
     color: new THREE.Color(color),
     blending: THREE.AdditiveBlending,
     transparent: false,
@@ -91,7 +147,7 @@ function GlowSprite({
   );
 }
 
-const SMOKE_COUNT = 18;
+const SMOKE_COUNT = 42;
 const _obj = new THREE.Object3D();
 const _worldCam = new THREE.Vector3();
 const _color = new THREE.Color();
@@ -103,31 +159,49 @@ function ChimneySmoke() {
     for (let i = 0; i < SMOKE_COUNT; i++) a[i] = i / SMOKE_COUNT;
     return a;
   }, []);
+  const seeds = useMemo(() => {
+    const s = new Float32Array(SMOKE_COUNT * 3);
+    for (let i = 0; i < SMOKE_COUNT; i++) {
+      s[i * 3] = (hash21(i, 1.7) - 0.5) * 2;
+      s[i * 3 + 1] = 0.7 + hash21(i, 4.2) * 0.8;
+      s[i * 3 + 2] = hash21(i, 9.1);
+    }
+    return s;
+  }, []);
   const geom = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
-  const mat = useMemo(() => additiveMat("#c8b4d4"), []);
+  const mat = useMemo(() => {
+    const m = additiveMat("#e8d0dc", SMOKE_TEX);
+    m.depthTest = false;
+    return m;
+  }, []);
 
   useFrame(({ camera }, delta) => {
     const mesh = meshRef.current;
     if (!mesh) return;
-    const speed = REDUCED_MOTION ? 0 : 0.1;
+    const speed = REDUCED_MOTION ? 0 : 0.08;
     mesh.updateWorldMatrix(true, false);
     _worldCam.copy(camera.position);
     mesh.worldToLocal(_worldCam);
     for (let i = 0; i < SMOKE_COUNT; i++) {
-      ages[i] += delta * speed;
+      const sx = seeds[i * 3];
+      const sy = seeds[i * 3 + 1];
+      const sz = seeds[i * 3 + 2];
+      ages[i] += delta * speed * sy;
       if (ages[i] > 1) ages[i] -= 1;
       const a = ages[i];
-      const x = CHIMNEY.x - a * 0.07 + Math.sin(a * 5.5 + i) * 0.01;
-      const y = CHIMNEY.y + 0.018 + a * 0.14;
-      const z = CHIMNEY.z + Math.cos(a * 3.8 + i) * 0.008;
-      const s = 0.012 + a * 0.038;
+      const swirl = a * 3.4 + i * 0.35;
+      const x = CHIMNEY.x - a * 0.11 + Math.sin(swirl) * (0.016 + a * 0.04) * sx;
+      const y = CHIMNEY.y + 0.01 + a * 0.28 * sy;
+      const z = CHIMNEY.z + Math.cos(swirl * 0.8) * (0.012 + a * 0.03);
+      const s = (0.055 + a * 0.16 * sy) * (0.9 + sz * 0.35);
       _obj.position.set(x, y, z);
-      _obj.scale.setScalar(s);
+      _obj.scale.set(s * 1.25, s, s);
       _obj.lookAt(_worldCam);
+      _obj.rotateZ(sz * 6.28 + a * 0.7);
       _obj.updateMatrix();
       mesh.setMatrixAt(i, _obj.matrix);
-      const fade = Math.sin(a * Math.PI) * 0.55;
-      _color.setRGB(0.55 * fade, 0.48 * fade, 0.58 * fade);
+      const fade = Math.pow(1.0 - a, 0.45) * (a < 0.06 ? a / 0.06 : 1);
+      _color.setRGB(0.95 * fade, 0.78 * fade, 0.88 * fade);
       mesh.setColorAt(i, _color);
     }
     mesh.instanceMatrix.needsUpdate = true;
