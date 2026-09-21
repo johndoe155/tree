@@ -74,8 +74,10 @@ export function loadTexture(gl: WebGL2RenderingContext, url: string, unit: numbe
 
 export function resizeCanvas(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext, maxDpr = 2) {
   const pixelRatio = Math.min(window.devicePixelRatio || 1, maxDpr);
-  const width = Math.max(1, Math.floor(window.innerWidth * pixelRatio));
-  const height = Math.max(1, Math.floor(window.innerHeight * pixelRatio));
+  const cssW = canvas.clientWidth || window.innerWidth;
+  const cssH = canvas.clientHeight || window.innerHeight;
+  const width = Math.max(1, Math.floor(cssW * pixelRatio));
+  const height = Math.max(1, Math.floor(cssH * pixelRatio));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import CloudscapeModel from "@/components/CloudscapeModel";
 import AtmosphereBack from "@/atmosphere/AtmosphereBack";
 import AtmosphereFront from "@/atmosphere/AtmosphereFront";
+import IslandMist from "@/atmosphere/IslandMist";
 import FilmGrain from "@/atmosphere/FilmGrain";
 import "@/atmosphere/atmosphere.css";
 
@@ -387,9 +388,15 @@ export default function Home() {
       <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
       <AtmosphereBack />
       <div className="cloudscape__islands" aria-hidden="true">
-        <img className="cloudscape__island cloudscape__island--tree" src="/tree-island.png" alt="" />
+        <div className="cloudscape__island cloudscape__island--tree">
+          <img src="/tree-island.png" alt="" />
+          <IslandMist src="/tree-island.png" />
+        </div>
         <CloudscapeModel />
-        <img className="cloudscape__island cloudscape__island--statue" src="/statue-island.png" alt="" />
+        <div className="cloudscape__island cloudscape__island--statue">
+          <img src="/statue-island.png" alt="" />
+          <IslandMist src="/statue-island.png" />
+        </div>
       </div>
       <AtmosphereFront />
       <FilmGrain />

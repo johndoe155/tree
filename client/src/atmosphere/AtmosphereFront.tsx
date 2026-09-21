@@ -96,7 +96,7 @@ export default function AtmosphereFront() {
             gl.uniform2f(loc.pointer, pointer.x, pointer.y);
             gl.uniform1f(loc.reduced, REDUCED_MOTION ? 1 : 0);
             gl.uniform1f(loc.intensity, INTENSITY);
-            gl.uniform1f(loc.mist, ATMO.mist ? 1 : 0);
+            gl.uniform1f(loc.mist, 0);
             gl.uniform1f(loc.rays, ATMO.rays ? 1 : 0);
             gl.uniform1f(loc.vignette, ATMO.vignette ? 1 : 0);
             gl.uniform1f(loc.foreground, ATMO.foreground ? 1 : 0);

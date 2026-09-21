@@ -82,7 +82,7 @@ function makeSmokeTexture() {
       const r = Math.sqrt(dx * dx + dy * dy);
       const envelope = Math.max(0, 1 - r);
       const n = fbm2(x * 0.07, y * 0.07);
-      const fall = Math.pow(envelope, 1.35) * (0.35 + 0.65 * n);
+      const fall = Math.pow(envelope, 1.8) * (0.18 + 0.45 * n);
       const i = (y * size + x) * 4;
       data[i] = 255;
       data[i + 1] = 255;
@@ -108,6 +108,25 @@ function additiveMat(color: string, map: THREE.DataTexture | null = GLOW_TEX) {
     depthTest: true,
     toneMapped: false,
     side: THREE.DoubleSide,
+  });
+}
+
+/** Alpha-blended smoke without `transparent: true` (keeps N8AO on its opaque path). */
+function smokeMat() {
+  return new THREE.MeshBasicMaterial({
+    map: SMOKE_TEX,
+    color: new THREE.Color("#c9a3c4"),
+    vertexColors: true,
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.SrcAlphaFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendEquation: THREE.AddEquation,
+    transparent: false,
+    depthWrite: false,
+    depthTest: true,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+    opacity: 1,
   });
 }
 
@@ -147,7 +166,7 @@ function GlowSprite({
   );
 }
 
-const SMOKE_COUNT = 42;
+const SMOKE_COUNT = 28;
 const _obj = new THREE.Object3D();
 const _worldCam = new THREE.Vector3();
 const _color = new THREE.Color();
@@ -169,11 +188,7 @@ function ChimneySmoke() {
     return s;
   }, []);
   const geom = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
-  const mat = useMemo(() => {
-    const m = additiveMat("#e8d0dc", SMOKE_TEX);
-    m.depthTest = false;
-    return m;
-  }, []);
+  const mat = useMemo(() => smokeMat(), []);
 
   useFrame(({ camera }, delta) => {
     const mesh = meshRef.current;
@@ -214,6 +229,42 @@ function ChimneySmoke() {
       ref={meshRef}
       args={[geom, mat, SMOKE_COUNT]}
       renderOrder={3}
+      frustumCulled={false}
+    />
+  );
+}
+
+function HouseRockMist() {
+  const mat = useMemo(() => {
+    const m = new THREE.MeshBasicMaterial({
+      map: SMOKE_TEX,
+      color: new THREE.Color("#d2a8c8"),
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.SrcAlphaFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      transparent: false,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    return m;
+  }, []);
+  const geom = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  const meshRef = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const t = REDUCED_MOTION ? 0 : clock.elapsedTime;
+    mesh.scale.set(0.55 + Math.sin(t * 0.15) * 0.03, 0.28, 1);
+  });
+  return (
+    <R3FMesh
+      ref={meshRef}
+      geometry={geom}
+      material={mat}
+      position={[0.02, -0.32, 0.12]}
+      renderOrder={1}
       frustumCulled={false}
     />
   );
