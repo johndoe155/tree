@@ -44,7 +44,7 @@ void main() {
   float band = smoothstep(0.02, 0.28, uv.y) * (1.0 - smoothstep(0.72, 1.02, uv.y));
   float volume = mix(0.50, 1.0, n1) * mix(0.55, 1.0, n2);
   float mist = blob * band * volume * (0.65 + 0.85 * islandA);
-  mist *= 2.35 * uIntensity;
+  mist *= 1.15 * uIntensity;
   mist = clamp(mist, 0.0, 0.85);
   mist *= mix(1.0, 0.38, islandA);
 

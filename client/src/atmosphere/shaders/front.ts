@@ -85,11 +85,26 @@ void main() {
   float treeRock = rockField(uTreeTex, uTreeBox, css, p, t, vec2(0.02, 0.0));
   float statueRock = rockField(uStatueTex, uStatueBox, css, p, t, vec2(-0.02, 0.02));
 
-  // Billowy volume: holes in the fbm so it never fills a solid patch.
-  float volume = mix(0.35, 1.0, n1) * mix(0.55, 1.0, n2);
-  float mist = volume * (treeRock + statueRock) * 1.35 * uMist * uIntensity;
-  mist = clamp(mist, 0.0, 0.78);
-  mist *= mix(1.0, 0.38, onIsland);
+  // Inward drift: left bank slides right, right bank slides left.
+  vec2 driftP = p + vec2(sign(0.5 - uv.x) * t * 0.016, t * 0.004);
+  float nA = fbm(driftP * vec2(1.35, 1.9) + uPointer * 0.03);
+  float nB = fbm(driftP * vec2(2.6, 3.2) + vec2(9.1, -t * 0.01));
+  float volume = mix(0.32, 1.0, n1) * mix(0.45, 1.0, n2);
+  float weather = mix(0.28, 1.0, nA) * mix(0.40, 1.0, nB);
+
+  // Originates at the viewport sides and eases inward across the midground.
+  float edgeDist = min(uv.x, 1.0 - uv.x);
+  float fromSides = 1.0 - smoothstep(0.04, 0.46, edgeDist);
+  float midground = smoothstep(0.18, 0.38, uv.y) * (1.0 - smoothstep(0.68, 0.88, uv.y));
+  // Keep the house facade readable.
+  float houseClear = 1.0 - (1.0 - smoothstep(0.16, 0.34, abs(uv.x - 0.5) * 2.0))
+                   * smoothstep(0.38, 0.55, uv.y) * (1.0 - smoothstep(0.78, 0.92, uv.y)) * 0.62;
+
+  float ambient = weather * fromSides * midground * houseClear * 0.42;
+  float cling = volume * (treeRock * 0.85 + statueRock * 0.85);
+  float mist = (ambient + cling) * uMist * uIntensity;
+  mist = clamp(mist, 0.0, 0.72);
+  mist *= mix(1.0, 0.36, onIsland);
 
   vec3 mistCol = mix(vec3(0.82, 0.56, 0.80), vec3(0.96, 0.74, 0.80), n3);
   vec3 color = mistCol * mist;

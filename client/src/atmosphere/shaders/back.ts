@@ -44,7 +44,8 @@ void main() {
   // Far slow wisp plane — slower than the photo, sits just in front of the sea.
   float n = fbm(p * vec2(1.2, 2.0) + vec2(-t * 0.006, t * 0.0015) + uPointer * 0.015);
   float sea = smoothstep(0.05, 0.35, uv.y) * (1.0 - smoothstep(0.55, 0.78, uv.y));
-  float wisp = smoothstep(0.48, 0.82, n) * sea * 0.08 * uIntensity;
+  float side = 0.45 + 0.55 * (1.0 - smoothstep(0.12, 0.42, min(uv.x, 1.0 - uv.x)));
+  float wisp = smoothstep(0.42, 0.80, n) * sea * side * 0.14 * uIntensity;
   color += vec3(0.72, 0.48, 0.70) * wisp;
   alpha = max(alpha, wisp);
 
