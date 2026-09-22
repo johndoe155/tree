@@ -4,6 +4,7 @@ import AtmosphereBack from "@/atmosphere/AtmosphereBack";
 import AtmosphereFront from "@/atmosphere/AtmosphereFront";
 import IslandMist from "@/atmosphere/IslandMist";
 import FilmGrain from "@/atmosphere/FilmGrain";
+import HeroIntro from "@/heroIntro/HeroIntro";
 import "@/atmosphere/atmosphere.css";
 
 const PHOTO_URL = "/cloudscape-source.webp";
@@ -383,8 +384,11 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="cloudscape" aria-label="Animated cloudscape">
-      <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
+    /* HeroIntro pins this scene for its scroll range, drives the dolly and then
+       hands off to the site content at full white. The hero markup is unchanged. */
+    <HeroIntro>
+      <main className="cloudscape" aria-label="Animated cloudscape">
+        <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
       <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
       <AtmosphereBack />
       <div className="cloudscape__islands" aria-hidden="true">
@@ -398,8 +402,9 @@ export default function Home() {
           <IslandMist src="/statue-island.png" />
         </div>
       </div>
-      <AtmosphereFront />
-      <FilmGrain />
-    </main>
+        <AtmosphereFront />
+        <FilmGrain />
+      </main>
+    </HeroIntro>
   );
 }
