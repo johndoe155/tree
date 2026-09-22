@@ -12,6 +12,8 @@
 
 export type IntroPhase = "idle" | "triggered" | "flashing" | "transitioning" | "done";
 
+import type { BackdropRegistration } from "./backdropDirector";
+
 /** A mutable cell. Deliberately not `RefObject` so plain objects can use it too. */
 export type Cell<T> = { current: T };
 
@@ -40,6 +42,12 @@ export type IntroHandle = {
   ready: Cell<boolean>;
   /** Length of the pinned scroll range in px (recomputed on resize). */
   scrollDistance: Cell<number>;
+  /**
+   * The 2D scenery layers (flanking islands + sky) registered by the DOM side,
+   * each with the rest layout the perspective solver needs. Measured with the
+   * intro's transform cleared, remeasured on resize.
+   */
+  backdrops: Cell<BackdropRegistration[]>;
   /** True once the timeline owns the frame: the camera stops listening to scroll. */
   locked: Cell<boolean>;
   /** Mirrors `prefers-reduced-motion` for scene components inside the canvas. */
@@ -60,6 +68,7 @@ export function createIntroHandle(): IntroHandle {
     phase: { current: "idle" },
     ready: { current: false },
     scrollDistance: { current: 1 },
+    backdrops: { current: [] },
     locked: { current: false },
     reducedMotion: { current: false },
     reportReady: () => {},

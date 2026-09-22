@@ -209,7 +209,11 @@ export default function Home() {
 
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, position);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
     const positionLocation = gl.getAttribLocation(program, "aPosition");
     gl.enableVertexAttribArray(positionLocation);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
@@ -301,7 +305,10 @@ export default function Home() {
       }
       loading = true;
       try {
-        const [photo, depth] = await Promise.all([loadTexture(gl, PHOTO_URL, 0), loadTexture(gl, DEPTH_URL, 1)]);
+        const [photo, depth] = await Promise.all([
+          loadTexture(gl, PHOTO_URL, 0),
+          loadTexture(gl, DEPTH_URL, 1),
+        ]);
         if (disposed || token !== resetToken || document.visibilityState === "hidden") {
           gl.deleteTexture(photo);
           gl.deleteTexture(depth);
@@ -388,20 +395,42 @@ export default function Home() {
        hands off to the site content at full white. The hero markup is unchanged. */
     <HeroIntro>
       <main className="cloudscape" aria-label="Animated cloudscape">
-        <canvas ref={canvasRef} className="cloudscape__canvas" aria-hidden="true" />
-      <img ref={fallbackRef} className="cloudscape__fallback is-visible" src={PHOTO_URL} alt="" aria-hidden="true" />
-      <AtmosphereBack />
-      <div className="cloudscape__islands" aria-hidden="true">
-        <div className="cloudscape__island cloudscape__island--tree">
-          <img src="/tree-island.png" alt="" />
-          <IslandMist src="/tree-island.png" />
+        {/* Marked layers are reprojected by the intro as the camera dollies in:
+            the sky and the two PNG islands share the dolly's perspective. */}
+        <canvas
+          ref={canvasRef}
+          className="cloudscape__canvas"
+          aria-hidden="true"
+          data-hero-backdrop="background"
+        />
+        <img
+          ref={fallbackRef}
+          className="cloudscape__fallback is-visible"
+          src={PHOTO_URL}
+          alt=""
+          aria-hidden="true"
+          data-hero-backdrop="background"
+        />
+        <AtmosphereBack />
+        <div className="cloudscape__islands" aria-hidden="true">
+          {/* Slots are the perspective handles: transforming one about its
+              island's own centre scales and pans that island outward exactly as
+              a nearer object would, and the pin clips it as it leaves the frame.
+              The island inside keeps its layout and float animation untouched. */}
+          <div className="cloudscape__island-slot" data-hero-backdrop="tree">
+            <div className="cloudscape__island cloudscape__island--tree">
+              <img src="/tree-island.png" alt="" />
+              <IslandMist src="/tree-island.png" />
+            </div>
+          </div>
+          <CloudscapeModel />
+          <div className="cloudscape__island-slot" data-hero-backdrop="statue">
+            <div className="cloudscape__island cloudscape__island--statue">
+              <img src="/statue-island.png" alt="" />
+              <IslandMist src="/statue-island.png" />
+            </div>
+          </div>
         </div>
-        <CloudscapeModel />
-        <div className="cloudscape__island cloudscape__island--statue">
-          <img src="/statue-island.png" alt="" />
-          <IslandMist src="/statue-island.png" />
-        </div>
-      </div>
         <AtmosphereFront />
         <FilmGrain />
       </main>

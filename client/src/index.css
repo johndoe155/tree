@@ -77,6 +77,8 @@ body {
   z-index: 1;
   opacity: 0;
   transition: opacity 420ms ease-out;
+  /* Reprojected with the rest of the scenery; no-op at rest (cleared inline). */
+  will-change: transform;
 }
 
 .cloudscape__canvas.is-ready {
@@ -105,6 +107,16 @@ body {
   transform-origin: center center;
   z-index: 2;
   pointer-events: none;
+}
+
+.cloudscape__island-slot {
+  /* Full-layer box the intro scales and pans: transforming it about the island's
+     own rest centre is exactly "this island, reprojected", and the island's
+     layout, responsive width and float animation stay untouched inside it. */
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
 }
 
 .cloudscape__island {
@@ -190,6 +202,7 @@ body {
   z-index: 0;
   opacity: 0;
   transition: opacity 400ms ease-out;
+  will-change: transform;
 }
 
 .cloudscape__fallback.is-visible {

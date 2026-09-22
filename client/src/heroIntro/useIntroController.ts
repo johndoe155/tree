@@ -83,14 +83,15 @@ export function useIntroController(handle: IntroHandle): IntroController {
       // there is nothing to update here — and no way to reverse the sequence.
       if (handle.locked.current) return;
       const rect = track.getBoundingClientRect();
-      const distance = Math.max(1, rect.height - window.innerHeight);
-      const progress = clamp01(-rect.top / distance);
-      handle.scrollProgress.current = progress;
-      // Keep the fixed flanking islands from colliding with the tight shot.
-      // Cheap (one custom-property write per scroll tick) and smoothed in CSS.
-      const { start, end } = INTRO.scroll.backdropFade;
-      const fade = 1 - clamp01((progress - start) / Math.max(1e-4, end - start));
-      track.style.setProperty("--hero-backdrop-fade", fade.toFixed(3));
+      const distance = rect.height - window.innerHeight;
+      // No real scrub range (reduced motion, or the scene never arrived): park
+      // progress at 0 so the hero stays a plain page instead of a 1px scrub.
+      if (distance < INTRO.scroll.minScrubRangePx) {
+        handle.scrollProgress.current = 0;
+        return;
+      }
+      handle.scrollDistance.current = distance;
+      handle.scrollProgress.current = clamp01(-rect.top / distance);
     };
 
     read();

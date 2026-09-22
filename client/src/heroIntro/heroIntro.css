@@ -5,8 +5,6 @@
 .hero-intro {
   position: relative;
   isolation: isolate;
-  /* Written by the scroll sampler; consumed by .cloudscape__island. */
-  --hero-backdrop-fade: 1;
 }
 
 .hero-intro__track {

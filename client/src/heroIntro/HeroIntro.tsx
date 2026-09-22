@@ -12,6 +12,7 @@ import { INTRO } from "./config";
 import { HeroIntroContext } from "./context";
 import { createIntroHandle } from "./introHandle";
 import { INTRO_FLASH_ID, useIntroController } from "./useIntroController";
+import BackdropRegistry from "./BackdropRegistry";
 import SiteContent from "./SiteContent";
 import "./heroIntro.css";
 
@@ -39,6 +40,10 @@ export default function HeroIntro({ children }: { children: ReactNode }) {
   // reduced motion, a failed/slow load, or an explicit opt-out.
   const showControl = reducedMotion || loadTimedOut || !sceneReady;
 
+  // Finds the marked 2D scenery layers (islands + sky) and keeps their measured
+  // rest layout available to the perspective director inside the scene.
+  const rootRef = useRef<HTMLDivElement>(null);
+
   const flashStyle = useMemo(
     () =>
       ({
@@ -49,7 +54,8 @@ export default function HeroIntro({ children }: { children: ReactNode }) {
 
   return (
     <HeroIntroContext.Provider value={handle}>
-      <div className="hero-intro" data-phase={phase}>
+      <BackdropRegistry rootRef={rootRef} intro={handle} />
+      <div className="hero-intro" data-phase={phase} ref={rootRef}>
         {heroMounted && (
           <div className="hero-intro__track" ref={trackRef} style={{ height: `${trackHeightVh}svh` }}>
             <div className="hero-intro__pin">

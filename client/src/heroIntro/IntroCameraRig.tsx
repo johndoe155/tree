@@ -22,6 +22,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { INTRO, MODEL_ANCHORS } from "./config";
 import { clamp01 } from "./easing";
+import { BackdropDirector } from "./backdropDirector";
 import type { IntroHandle } from "./introHandle";
 
 const START_POSITION = new THREE.Vector3(...INTRO.camera.start.position);
@@ -39,6 +40,7 @@ const _lookAt = new THREE.Vector3();
 const _doorAnchor = new THREE.Vector3(...MODEL_ANCHORS.window);
 const _doorWorld = new THREE.Vector3();
 const _projected = new THREE.Vector3();
+const _viewport = { width: 0, height: 0 };
 
 type Props = {
   intro: IntroHandle | null;
@@ -52,6 +54,13 @@ function isPerspective(camera: THREE.Camera): camera is THREE.PerspectiveCamera 
 
 export default function IntroCameraRig({ intro, yawRef }: Props) {
   const { camera } = useThree();
+  /**
+   * Reprojects the 2D scenery layers (flanking islands + sky) through this same
+   * camera every frame, so the PNGs and background share the dolly's
+   * perspective instead of sitting still while the cottage approaches.
+   */
+  const backdropsRef = useRef<BackdropDirector | null>(null);
+  if (!backdropsRef.current) backdropsRef.current = new BackdropDirector();
   const triggeredRef = useRef(false);
   const announcedReadyRef = useRef(false);
   /** Last fov this rig wrote, so we can spot external (responsive) changes. */
@@ -65,8 +74,32 @@ export default function IntroCameraRig({ intro, yawRef }: Props) {
     camera.lookAt(START_LOOK_AT);
   }, [camera]);
 
+  useEffect(() => {
+    const director = backdropsRef.current;
+    return () => director?.dispose();
+  }, []);
+
   useFrame((_state, delta) => {
     if (!intro) return;
+
+    // Scenery perspective runs off the same raw scroll progress as the camera
+    // (not the damped value): the layers are projected from the live camera, so
+    // feeding them the same source keeps them locked to the dolly at all times.
+    const director = backdropsRef.current;
+    if (director && isPerspective(camera)) {
+      director.setRegistrations(intro.backdrops.current);
+      // The window, not `_state.size`: these layers are DOM boxes addressed in
+      // viewport pixels, and the hero scales its own canvas with CSS at some
+      // breakpoints, which would put R3F's size in a different coordinate space.
+      _viewport.width = window.innerWidth;
+      _viewport.height = window.innerHeight;
+      director.update(
+        camera,
+        baseFovRef.current,
+        _viewport,
+        intro.locked.current ? 1 : intro.scrollProgress.current
+      );
+    }
 
     // Let the controller know the scene can be scrubbed (first rendered frame).
     if (!announcedReadyRef.current) {

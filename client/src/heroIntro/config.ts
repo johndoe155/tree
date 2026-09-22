@@ -50,12 +50,11 @@ export type IntroConfig = {
     /** Damping used under `prefers-reduced-motion` (snappier, still smooth). */
     reducedMotionDamping: number;
     /**
-     * Progress range over which the fixed flanking islands (tree/statue) fade
-     * out of the way of the tight shot. They are backdrop only — nothing about
-     * their layout or float animation changes, they just stop colliding with
-     * the cottage as the camera arrives.
+     * Smallest scrub range (px) that counts as a real range. Below this
+     * (reduced motion, failed load) progress stays parked at 0, so the page is
+     * a plain scroll rather than a near-zero-range scrub.
      */
-    backdropFade: { start: number; end: number };
+    minScrubRangePx: number;
   };
   camera: {
     start: CameraState;
@@ -148,7 +147,7 @@ export const INTRO: IntroConfig = {
     threshold: 0.9,
     damping: 0.08,
     reducedMotionDamping: 0.2,
-    backdropFade: { start: 0.55, end: 0.82 },
+    minScrubRangePx: 8,
   },
   camera: {
     start: { position: [0, 0.15, 5.8], lookAt: [0, 0, 0] },
@@ -201,6 +200,41 @@ export const MODEL_ANCHORS = {
   wall: { base: 0.1288, slope: 0.2996 },
   /** Points from the wall towards the camera, in model space. */
   wallNormal: [-0.287, 0, 0.958] as Vec3,
+};
+
+/**
+ * How far back each 2D layer sits, in world units along the camera's view axis.
+ * The layers are DOM elements, but they are positioned by projecting them
+ * through the same camera that drives the GLB, so the whole scenery shares one
+ * perspective instead of the 3D model moving inside a frozen picture:
+ *
+ *   - the flanking islands share the cottage's own plane (z = 0), so they grow
+ *     with it and are clipped out of frame as the camera pushes in;
+ *   - the cloudscape sits far behind (z = -30), so it barely grows and is only
+ *     panned by the camera's rotation — that near/far differential is the cue
+ *     that reads as real distance.
+ *
+ * Each layer's on-screen size and position at progress 0 are used to solve its
+ * world anchor and world height, so the layout is unchanged when the intro is
+ * at rest (responsive breakpoints included).
+ */
+export type BackdropId = "tree" | "statue" | "background";
+
+export type BackdropSpec = {
+  /** World z plane this layer is treated as living on. */
+  worldZ: number;
+  /**
+   * True for layers that must always keep covering the viewport (the sky):
+   * their scale is raised as needed so panning can never expose an edge.
+   */
+  coversViewport: boolean;
+  note: string;
+};
+
+export const BACKDROPS: Record<BackdropId, BackdropSpec> = {
+  tree: { worldZ: 0, coversViewport: false, note: "flanking island, cottage plane" },
+  statue: { worldZ: 0, coversViewport: false, note: "flanking island, cottage plane" },
+  background: { worldZ: -30, coversViewport: true, note: "sky / cloud sea, far plane" },
 };
 
 export const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
