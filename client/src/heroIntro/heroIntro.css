@@ -1,0 +1,170 @@
+/* Hero intro: pinned scroll track, loader, skip control, flash overlay.
+   Geometry and colours that belong to the choreography live in config.ts; this
+   file only positions things and defines the two overlay layers. */
+
+.hero-intro {
+  position: relative;
+  isolation: isolate;
+  /* Written by the scroll sampler; consumed by .cloudscape__island. */
+  --hero-backdrop-fade: 1;
+}
+
+.hero-intro__track {
+  position: relative;
+  width: 100%;
+  /* Height is set inline from INTRO.scroll.distanceVh (one viewport + the
+      scrub range). The pin below keeps the hero on screen across all of it. */
+}
+
+.hero-intro__pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Loader + skip/enter control (both only appear when the scrub path is off).
+   --------------------------------------------------------------------------- */
+
+.hero-intro__loader {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(18px, 5vh, 46px);
+  transform: translate(-50%, 8px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(18, 12, 38, 0.42);
+  border: 1px solid rgba(255, 236, 214, 0.16);
+  backdrop-filter: blur(6px);
+  color: rgba(255, 243, 230, 0.82);
+  font:
+    500 12.5px/1 system-ui,
+    sans-serif;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 520ms ease,
+    transform 520ms ease;
+  z-index: 6;
+}
+
+.hero-intro__loader[data-visible="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.hero-intro__loader-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd9a8;
+  box-shadow: 0 0 12px 2px rgba(255, 200, 150, 0.55);
+  animation: hero-intro-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes hero-intro-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.hero-intro__control {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(18px, 5vh, 46px);
+  transform: translateX(-50%);
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 236, 214, 0.34);
+  background: rgba(20, 14, 42, 0.55);
+  color: #fff6e9;
+  font:
+    500 13.5px/1 system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    transform 200ms ease;
+  z-index: 7;
+}
+
+.hero-intro__control:hover {
+  background: rgba(38, 26, 70, 0.72);
+  border-color: rgba(255, 236, 214, 0.6);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.hero-intro__control:focus-visible {
+  outline: 2px solid #ffd9a8;
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------------------
+   Flash overlay. Lives in a body portal (fixed, above everything) so unmounting
+   the hero mid-transition cannot take the white with it. Driven entirely from
+   the timeline through CSS custom properties.
+   --------------------------------------------------------------------------- */
+
+.hero-intro__flash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  --flash-x: 50%;
+  --flash-y: 50%;
+  --flash-radius: 0px;
+  --flash-wash: 0;
+  --intro-flash-colour: #ffffff;
+}
+
+.hero-intro__flash[data-active="true"] {
+  pointer-events: auto;
+}
+
+.hero-intro__flash-bloom {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle var(--flash-radius) at var(--flash-x) var(--flash-y),
+    var(--intro-flash-colour) 0%,
+    rgba(255, 255, 255, 0.94) 42%,
+    rgba(255, 255, 255, 0.55) 74%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.hero-intro__flash-wash {
+  position: absolute;
+  inset: 0;
+  background: var(--intro-flash-colour);
+  opacity: var(--flash-wash);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-intro__loader-dot {
+    animation: none;
+  }
+
+  .hero-intro__loader,
+  .hero-intro__control {
+    transition: none;
+  }
+}

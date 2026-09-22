@@ -7,6 +7,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import ModelAccents, { SunRimLight } from "@/components/model-accents/ModelAccents";
+import IntroCameraRig from "@/heroIntro/IntroCameraRig";
+import DoorGlow from "@/heroIntro/DoorGlow";
+import { useIntroHandle } from "@/heroIntro/context";
 
 // The only mobile-specific rendering choice is the lighter HDRI asset.
 const IS_MOBILE =
@@ -15,6 +18,14 @@ const IS_MOBILE =
 const HDRI_URL = IS_MOBILE ? "/studio_small_08_1k.hdr" : "/studio_small_08_4k.hdr";
 const MODEL_URL = "/model.glb";
 const MODEL_ROTATION_Y = -Math.PI / 2;
+/**
+ * Kick the GLB fetch off with the module graph instead of waiting for the first
+ * render: the hero intro deliberately cannot be scrubbed until the model is up,
+ * so this asset is on the critical path. `useLoader.preload` is used rather than
+ * `useGLTF.preload` so the extensions callback still installs the meshopt
+ * decoder this asset needs.
+ */
+useLoader.preload(GLTFLoader, MODEL_URL, (loader) => loader.setMeshoptDecoder(MeshoptDecoder));
 
 const FLOAT_SPEED = 1.1;
 const FLOAT_AMPLITUDE_BASE = 0.05;
@@ -271,8 +282,16 @@ function ResponsiveRig() {
 function Model() {
   const gltf = useLoader(GLTFLoader, MODEL_URL, (loader) => loader.setMeshoptDecoder(MeshoptDecoder));
   const { gl } = useThree();
+  const intro = useIntroHandle();
   const fitRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
+  /**
+   * Wrapper between the responsive fit scale and the float bob. The hero intro
+   * drives its Y rotation so the cottage squares up to the camera over the same
+   * eased progress as the dolly: the model turns, not the camera. Its children
+   * (the GLB primitive and every accent/sprite anchored to it) turn with it.
+   */
+  const yawRef = useRef<THREE.Group>(null);
   const normalizedScaleRef = useRef(1);
   const floatTimeRef = useRef(0);
   const holdUniforms = useRef(createHoldUniforms());
@@ -352,6 +371,20 @@ function Model() {
     });
   }, [gltf, gl]);
 
+  // The intro unmounts this subtree at full white. The GLTF clone owns real GPU
+  // memory (a 47 MB asset: ~1 M vertices and 8k textures) that R3F does not
+  // release for a `primitive`, so release it here — geometries, materials and
+  // their textures — and drop the loader cache so a remount re-parses cleanly
+  // instead of reusing disposed resources. The renderer itself is disposed by
+  // <Canvas/> on unmount.
+  useEffect(
+    () => () => {
+      disposeObject(scene);
+      useLoader.clear(GLTFLoader, MODEL_URL);
+    },
+    [scene],
+  );
+
   useFrame((_state, delta) => {
     const viewport = _state.viewport;
     const responsiveScale = Math.min(viewport.width, viewport.height) * VIEWPORT_FIT_FACTOR;
@@ -364,12 +397,33 @@ function Model() {
 
   return (
     <R3FGroup ref={fitRef}>
-      <R3FGroup ref={floatRef}>
-        <R3FPrimitive object={scene} />
-        <ModelAccents />
+      <R3FGroup ref={yawRef}>
+        <R3FGroup ref={floatRef}>
+          <R3FPrimitive object={scene} />
+          <ModelAccents />
+          <DoorGlow intro={intro} />
+        </R3FGroup>
       </R3FGroup>
+      <IntroCameraRig intro={intro} yawRef={yawRef} />
     </R3FGroup>
   );
+}
+
+/** Release every GPU resource the cloned GLTF scene owns. */
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry?.dispose();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if (!material) continue;
+      for (const value of Object.values(material)) {
+        if (value instanceof THREE.Texture) value.dispose();
+      }
+      material.dispose();
+    }
+  });
 }
 
 function Scene() {

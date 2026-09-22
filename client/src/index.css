@@ -12,12 +12,30 @@ body,
 #root {
   width: 100%;
   min-width: 100%;
-  height: 100%;
   min-height: 100%;
   margin: 0;
-  overflow: hidden;
   background: #171331;
 }
+
+/* The hero intro scrubs off real scroll position, so the document itself has to
+   scroll. Horizontal overflow and rubber-banding stay off. */
+html {
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: none;
+  /* Reserved gutter keeps the layout from shifting when the hero unmounts. */
+  scrollbar-gutter: stable;
+}
+
+body,
+#root {
+  height: auto;
+}
+
+/* Note: the intro's scroll lock intentionally does NOT set `overflow: hidden`
+   on <html> — that would stop the hero's `position: sticky` pin from sticking.
+   It swallows wheel/touch/key input and holds the scroll offset instead. */
 
 body {
   -webkit-font-smoothing: antialiased;
